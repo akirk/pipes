@@ -990,9 +990,15 @@ class App extends BaseApp {
     private function render_dashboard_output_footer( \WP_Post $post ): string {
         $run = $this->get_cached_pipe_run( $post );
         $generated_at = is_array( $run ) ? (int) ( $run['generated_at'] ?? 0 ) : 0;
-        $generated = $generated_at > 0
-            ? sprintf( __( 'Generated %s ago.', 'pipes' ), human_time_diff( $generated_at, time() ) )
-            : __( 'Generated on demand.', 'pipes' );
+        if ( $generated_at > 0 ) {
+            $generated = sprintf(
+                __( 'Generated %1$s ago (%2$s).', 'pipes' ),
+                human_time_diff( $generated_at, time() ),
+                wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), $generated_at )
+            );
+        } else {
+            $generated = __( 'Generated on demand.', 'pipes' );
+        }
 
         return sprintf(
             '<div class="pipes-output-footer"><span>%1$s %2$s</span><a href="%3$s">%4$s</a></div>',

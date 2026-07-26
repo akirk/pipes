@@ -1055,6 +1055,29 @@
             return raw;
         };
 
+        const isUserQueryArg = (value) => (
+            value && typeof value === 'object' && value.__pipes_user_query
+        );
+
+        const userQuestionKey = (node, propName) => `${node.id}.${propName}`;
+
+        const collectUserAnswers = () => {
+            const answers = {};
+            for (const node of state.graph.nodes) {
+                for (const [key, value] of Object.entries(node.args || {})) {
+                    if (!isUserQueryArg(value)) {
+                        continue;
+                    }
+                    const answer = window.prompt(value.question || key);
+                    if (answer === null) {
+                        throw new Error('Run cancelled');
+                    }
+                    answers[userQuestionKey(node, key)] = answer;
+                }
+            }
+            return answers;
+        };
+
         const attachNodeDrag = (element, node) => {
             let drag = null;
             element.addEventListener('pointerdown', (event) => {
@@ -1225,12 +1248,14 @@
 
         const runPipe = async () => {
             setStatus('Running...');
+            const userAnswers = collectUserAnswers();
             const data = await request('run', {
                 method: 'POST',
                 body: JSON.stringify({
                     pipe_id: state.selectedPipeId || 0,
                     graph: state.graph,
-                    confirm_destructive: $('[data-confirm-destructive]')?.checked || false
+                    confirm_destructive: $('[data-confirm-destructive]')?.checked || false,
+                    user_answers: userAnswers
                 })
             });
             state.lastRunResults = data.results || {};
@@ -1910,6 +1935,7 @@
             for (const prop of props) {
                 const binding = (node.bindings || []).find((candidate) => candidate.target === prop.name);
                 const sourceNodes = compatibleBindingSourceNodesFor(node, prop);
+                const argValue = node.args[prop.name];
                 const row = document.createElement('div');
                 row.className = 'list-arg';
                 row.innerHTML = '<label></label>';
@@ -1920,18 +1946,36 @@
                 manualOption.value = '';
                 manualOption.textContent = 'Manual value';
                 bindSelect.append(manualOption);
+                const askOption = document.createElement('option');
+                askOption.value = '__ask_user';
+                askOption.textContent = 'Ask user';
+                bindSelect.append(askOption);
                 for (const source of sourceNodes) {
                     const option = document.createElement('option');
                     option.value = source.id;
                     option.textContent = source.label || source.ability_id;
                     bindSelect.append(option);
                 }
-                bindSelect.value = binding?.source || '';
+                bindSelect.value = binding?.source || (isUserQueryArg(argValue) ? '__ask_user' : '');
                 bindSelect.addEventListener('change', (event) => {
                     node.bindings = node.bindings || [];
                     const existing = node.bindings.find((candidate) => candidate.target === prop.name);
                     if (!event.target.value) {
                         node.bindings = node.bindings.filter((candidate) => candidate.target !== prop.name);
+                        if (isUserQueryArg(node.args[prop.name])) {
+                            delete node.args[prop.name];
+                        }
+                        syncEdgesFromBindings();
+                        markDirty();
+                        render();
+                        return;
+                    }
+                    if (event.target.value === '__ask_user') {
+                        node.bindings = node.bindings.filter((candidate) => candidate.target !== prop.name);
+                        node.args[prop.name] = {
+                            __pipes_user_query: true,
+                            question: `What should ${prop.name} be?`
+                        };
                         syncEdgesFromBindings();
                         markDirty();
                         render();
@@ -1951,6 +1995,20 @@
                     render();
                 });
                 row.append(bindSelect);
+
+                if (isUserQueryArg(node.args[prop.name])) {
+                    const question = document.createElement('input');
+                    question.type = 'text';
+                    question.value = node.args[prop.name].question || '';
+                    question.placeholder = `Question for ${prop.name}`;
+                    question.addEventListener('input', (event) => {
+                        node.args[prop.name].question = event.target.value;
+                        markDirty();
+                    });
+                    row.append(question);
+                    container.append(row);
+                    continue;
+                }
 
                 if (binding) {
                     const source = nodeById(binding.source);

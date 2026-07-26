@@ -23,6 +23,7 @@ class App extends BaseApp {
         add_action( 'admin_bar_menu', [ $this, 'register_admin_bar_outputs' ], 120 );
         add_action( 'admin_head', [ $this, 'output_styles' ] );
         add_action( 'wp_head', [ $this, 'output_styles' ] );
+        add_action( 'admin_post_pipes_run_dashboard_output', [ $this, 'handle_dashboard_output_submission' ] );
         add_action( 'rest_api_init', [ $this, 'register_rest_routes' ] );
         add_action( 'wp_abilities_api_categories_init', [ $this, 'register_ability_category' ] );
         add_action( 'wp_abilities_api_init', [ $this, 'register_abilities' ] );
@@ -557,7 +558,7 @@ class App extends BaseApp {
             $pipe_id = 0;
         }
 
-        $result = $this->run_graph( $graph, ! empty( $payload['confirm_destructive'] ) );
+        $result = $this->run_graph( $graph, ! empty( $payload['confirm_destructive'] ), is_array( $payload['user_answers'] ?? null ) ? $payload['user_answers'] : [] );
         if ( is_wp_error( $result ) ) {
             return $result;
         }
@@ -737,10 +738,42 @@ class App extends BaseApp {
             return;
         }
 
+        $run = $this->get_cached_pipe_run( $pipe );
+        if ( is_wp_error( $run ) && 'pipes_user_input_required' === $run->get_error_code() ) {
+            echo '<div class="pipes-output pipes-output-dashboard">';
+            echo $this->render_dashboard_query_form( $pipe, $target, (array) $run->get_error_data() ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+            echo '</div>';
+            return;
+        }
+
         echo '<div class="pipes-output pipes-output-dashboard">';
-        echo $this->render_pipe_output_html( $pipe, $target ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
-        echo $this->render_dashboard_output_footer( $pipe ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+        echo $this->render_pipe_output_html( $pipe, $target, $run ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+        echo $this->render_dashboard_output_footer( $pipe, $run ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
         echo '</div>';
+    }
+
+    public function handle_dashboard_output_submission(): void {
+        $post_id = isset( $_POST['post_id'] ) ? absint( $_POST['post_id'] ) : 0; // phpcs:ignore WordPress.Security.NonceVerification.Missing
+        $node_id = isset( $_POST['node_id'] ) ? sanitize_key( (string) wp_unslash( $_POST['node_id'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Missing
+        check_admin_referer( 'pipes_dashboard_output_' . $post_id . '_' . $node_id );
+
+        $post = $this->get_pipe_post( $post_id );
+        if ( is_wp_error( $post ) ) {
+            wp_die( esc_html( $post->get_error_message() ) );
+        }
+
+        $answers = isset( $_POST['user_answers'] ) && is_array( $_POST['user_answers'] ) ? $this->sanitize_json_value( wp_unslash( $_POST['user_answers'] ) ) : []; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+        $result  = $this->run_graph( $this->get_pipe_graph( $post ), false, $answers );
+        if ( is_wp_error( $result ) ) {
+            wp_die( esc_html( $result->get_error_message() ) );
+        }
+
+        $result['generated_at'] = time();
+        $result['cached']       = false;
+        set_transient( $this->get_pipe_output_cache_key( $post ), $result, 5 * MINUTE_IN_SECONDS );
+
+        wp_safe_redirect( wp_get_referer() ?: admin_url( 'index.php' ) );
+        exit;
     }
 
     public function register_admin_bar_outputs( $wp_admin_bar ): void {
@@ -948,8 +981,8 @@ class App extends BaseApp {
         return 'auto';
     }
 
-    private function get_pipe_output_value( \WP_Post $post, array $target ) {
-        $run = $this->get_cached_pipe_run( $post );
+    private function get_pipe_output_value( \WP_Post $post, array $target, $run = null ) {
+        $run = null === $run ? $this->get_cached_pipe_run( $post ) : $run;
         if ( is_wp_error( $run ) ) {
             return $run;
         }
@@ -967,8 +1000,12 @@ class App extends BaseApp {
         return null;
     }
 
+    private function get_pipe_output_cache_key( \WP_Post $post ): string {
+        return 'pipes_output_' . get_current_user_id() . '_' . $post->ID . '_' . md5( $post->post_modified_gmt );
+    }
+
     private function get_cached_pipe_run( \WP_Post $post ) {
-        $cache_key = 'pipes_output_' . get_current_user_id() . '_' . $post->ID . '_' . md5( $post->post_modified_gmt );
+        $cache_key = $this->get_pipe_output_cache_key( $post );
         $cached    = get_transient( $cache_key );
         if ( false !== $cached ) {
             if ( is_array( $cached ) ) {
@@ -978,6 +1015,9 @@ class App extends BaseApp {
         }
 
         $result = $this->run_graph( $this->get_pipe_graph( $post ), false );
+        if ( is_wp_error( $result ) ) {
+            return $result;
+        }
         if ( is_array( $result ) ) {
             $result['generated_at'] = time();
             $result['cached']       = false;
@@ -987,8 +1027,8 @@ class App extends BaseApp {
         return $result;
     }
 
-    private function render_dashboard_output_footer( \WP_Post $post ): string {
-        $run = $this->get_cached_pipe_run( $post );
+    private function render_dashboard_output_footer( \WP_Post $post, $run = null ): string {
+        $run = null === $run ? $this->get_cached_pipe_run( $post ) : $run;
         $generated_at = is_array( $run ) ? (int) ( $run['generated_at'] ?? 0 ) : 0;
         if ( $generated_at > 0 ) {
             $generated = sprintf(
@@ -1009,12 +1049,37 @@ class App extends BaseApp {
         );
     }
 
+    private function render_dashboard_query_form( \WP_Post $post, array $target, array $error_data ): string {
+        $questions = isset( $error_data['questions'] ) && is_array( $error_data['questions'] ) ? $error_data['questions'] : [];
+        if ( [] === $questions ) {
+            return '<p>' . esc_html__( 'This pipe needs user input before it can run.', 'pipes' ) . '</p>';
+        }
+
+        $html = '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" class="pipes-query-form">';
+        $html .= '<input type="hidden" name="action" value="pipes_run_dashboard_output">';
+        $html .= '<input type="hidden" name="post_id" value="' . esc_attr( (string) $post->ID ) . '">';
+        $html .= '<input type="hidden" name="node_id" value="' . esc_attr( (string) $target['node_id'] ) . '">';
+        $html .= wp_nonce_field( 'pipes_dashboard_output_' . $post->ID . '_' . $target['node_id'], '_wpnonce', true, false );
+        foreach ( $questions as $question ) {
+            $key = (string) ( $question['key'] ?? '' );
+            if ( '' === $key ) {
+                continue;
+            }
+            $html .= '<p><label><strong>' . esc_html( (string) ( $question['question'] ?? $key ) ) . '</strong>';
+            $html .= '<input type="text" name="user_answers[' . esc_attr( $key ) . ']" value="" style="width:100%;margin-top:6px;"></label></p>';
+        }
+        $html .= '<p><button class="button button-primary" type="submit">' . esc_html__( 'Run pipe', 'pipes' ) . '</button></p>';
+        $html .= '</form>';
+
+        return $html;
+    }
+
     private function get_pipe_edit_url( \WP_Post $post ): string {
         return add_query_arg( 'pipe', (string) $post->ID, home_url( '/pipes/' ) );
     }
 
-    private function render_pipe_output_html( \WP_Post $post, array $target ): string {
-        $value = $this->get_pipe_output_value( $post, $target );
+    private function render_pipe_output_html( \WP_Post $post, array $target, $run = null ): string {
+        $value = $this->get_pipe_output_value( $post, $target, $run );
 
         if ( is_wp_error( $value ) ) {
             return '<p>' . esc_html( $value->get_error_message() ) . '</p>';
@@ -1277,7 +1342,7 @@ class App extends BaseApp {
         return sanitize_text_field( (string) $value );
     }
 
-    private function run_graph( array $graph, bool $confirm_destructive = false ) {
+    private function run_graph( array $graph, bool $confirm_destructive = false, array $user_answers = [] ) {
         if ( ! function_exists( 'wp_get_ability' ) ) {
             return new \WP_Error( 'pipes_abilities_unavailable', __( 'The WordPress Abilities API is not available.', 'pipes' ), [ 'status' => 501 ] );
         }
@@ -1304,6 +1369,22 @@ class App extends BaseApp {
             }
 
             $input = is_array( $node['args'] ?? null ) ? $node['args'] : [];
+            foreach ( $input as $key => $value ) {
+                if ( ! $this->is_user_query_arg( $value ) ) {
+                    continue;
+                }
+                $answer_key = $node['id'] . '.' . $key;
+                if ( ! array_key_exists( $answer_key, $user_answers ) ) {
+                    return new \WP_Error(
+                        'pipes_user_input_required',
+                        __( 'This pipe needs user input before it can run.', 'pipes' ),
+                        [
+                            'questions' => $this->get_user_query_questions( $graph ),
+                        ]
+                    );
+                }
+                $input[ $key ] = $user_answers[ $answer_key ];
+            }
             foreach ( (array) ( $node['bindings'] ?? [] ) as $binding ) {
                 $source_id = (string) ( $binding['source'] ?? '' );
                 $target    = (string) ( $binding['target'] ?? '' );
@@ -1331,6 +1412,32 @@ class App extends BaseApp {
             'success' => true,
             'results' => $results,
         ];
+    }
+
+    private function is_user_query_arg( $value ): bool {
+        return is_array( $value ) && ! empty( $value['__pipes_user_query'] );
+    }
+
+    private function get_user_query_questions( array $graph ): array {
+        $questions = [];
+        foreach ( (array) ( $graph['nodes'] ?? [] ) as $node ) {
+            if ( ! is_array( $node ) || ! is_array( $node['args'] ?? null ) ) {
+                continue;
+            }
+            foreach ( $node['args'] as $key => $value ) {
+                if ( ! $this->is_user_query_arg( $value ) ) {
+                    continue;
+                }
+                $questions[] = [
+                    'key'      => (string) ( $node['id'] ?? '' ) . '.' . (string) $key,
+                    'node_id'  => (string) ( $node['id'] ?? '' ),
+                    'input'    => (string) $key,
+                    'question' => (string) ( $value['question'] ?? $key ),
+                ];
+            }
+        }
+
+        return $questions;
     }
 
     private function order_nodes( array $graph ) {

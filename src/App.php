@@ -546,17 +546,18 @@ class App extends BaseApp {
         $payload = $request->get_json_params();
         $payload = is_array( $payload ) ? $payload : [];
 
+        $has_payload_graph = isset( $payload['graph'] ) && is_array( $payload['graph'] );
         if ( ! empty( $payload['pipe_id'] ) ) {
             $post = $this->get_pipe_post( (int) $payload['pipe_id'] );
             if ( is_wp_error( $post ) ) {
                 return $post;
             }
-            $graph = $this->get_pipe_graph( $post );
             $pipe_id = $post->ID;
         } else {
-            $graph = isset( $payload['graph'] ) && is_array( $payload['graph'] ) ? $this->sanitize_graph( $payload['graph'] ) : [];
             $pipe_id = 0;
         }
+
+        $graph = $has_payload_graph ? $this->sanitize_graph( $payload['graph'] ) : ( isset( $post ) ? $this->get_pipe_graph( $post ) : [] );
 
         $result = $this->run_graph( $graph, ! empty( $payload['confirm_destructive'] ), is_array( $payload['user_answers'] ?? null ) ? $payload['user_answers'] : [] );
         if ( is_wp_error( $result ) ) {

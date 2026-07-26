@@ -224,8 +224,11 @@
         .flow-step-header {
             align-items: start;
             display: grid;
-            grid-template-columns: auto minmax(0, 1fr) auto;
+            grid-template-columns: auto minmax(0, 1fr);
             gap: 0.65rem;
+        }
+        .flow-step-main {
+            min-width: 0;
         }
         .flow-step-number {
             align-items: center;
@@ -245,15 +248,25 @@
             display: flex;
             flex-wrap: wrap;
             gap: 0.35rem;
-            justify-content: flex-end;
+            justify-content: flex-start;
+            margin-top: 0.75rem;
         }
         .flow-step-actions button {
+            flex: 0 0 auto;
             padding: 0.35rem 0.5rem;
         }
         .binding-summary {
             display: grid;
             gap: 0.35rem;
             margin-top: 0.7rem;
+        }
+        .list-bindings {
+            display: grid;
+            gap: 0.6rem;
+            margin-top: 0.75rem;
+        }
+        .list-bindings > button {
+            justify-self: start;
         }
         .graph {
             position: relative;
@@ -561,6 +574,14 @@
             .list-item {
                 padding: 0.55rem;
             }
+            .flow-step-actions {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+            .flow-step-actions button {
+                min-width: 0;
+                width: 100%;
+            }
             .canvas {
                 min-height: 22rem;
                 padding: 0.75rem;
@@ -729,26 +750,6 @@
 
         const selectedNode = () => nodeById(state.selectedNodeId);
 
-        const defaultOutputs = () => ({
-            dashboard: { enabled: false, path: '' },
-            masterbar_menu: { enabled: false, path: '' },
-            masterbar_graph: { enabled: false, path: '' }
-        });
-
-        const ensureOutputs = () => {
-            state.graph.outputs = {
-                ...defaultOutputs(),
-                ...(state.graph.outputs || {})
-            };
-            for (const key of Object.keys(defaultOutputs())) {
-                state.graph.outputs[key] = {
-                    ...defaultOutputs()[key],
-                    ...(state.graph.outputs[key] || {})
-                };
-            }
-            return state.graph.outputs;
-        };
-
         const schemaProperties = (schema) => {
             if (!schema || !schema.properties || typeof schema.properties !== 'object') {
                 return [];
@@ -891,6 +892,15 @@
             render();
         };
 
+        const defaultBindingForNode = (node, props) => {
+            const source = state.graph.nodes.find((candidate) => candidate.id !== node.id);
+            return {
+                target: props[0]?.name || '',
+                source: source?.id || '',
+                path: ''
+            };
+        };
+
         const attachNodeDrag = (element, node) => {
             let drag = null;
             element.addEventListener('pointerdown', (event) => {
@@ -973,7 +983,7 @@
             state.selectedPipeId = null;
             state.selectedNodeId = null;
             state.title = 'Untitled Pipe';
-            state.graph = { nodes: [], edges: [], outputs: defaultOutputs() };
+            state.graph = { nodes: [], edges: [] };
             state.lastRunResults = {};
             state.activeBindingTarget = '';
             state.dirty = false;
@@ -990,7 +1000,6 @@
             state.selectedNodeId = data.pipe.graph?.nodes?.[0]?.id || null;
             state.title = data.pipe.title || example.title || 'Untitled Pipe';
             state.graph = data.pipe.graph || { nodes: [], edges: [] };
-            ensureOutputs();
             state.lastRunResults = {};
             state.activeBindingTarget = '';
             state.dirty = false;
@@ -1007,7 +1016,6 @@
             state.selectedPipeId = data.pipe.id;
             state.title = data.pipe.title;
             state.graph = data.pipe.graph || { nodes: [], edges: [] };
-            ensureOutputs();
             state.selectedNodeId = state.graph.nodes[0]?.id || null;
             state.lastRunResults = {};
             state.activeBindingTarget = '';
@@ -1028,7 +1036,6 @@
             state.selectedPipeId = data.pipe.id;
             state.title = data.pipe.title;
             state.graph = data.pipe.graph;
-            ensureOutputs();
             state.dirty = false;
             $('[data-title]').value = state.title;
             setStatus('Saved');
@@ -1297,23 +1304,28 @@
                 step.innerHTML = `
                     <div class="flow-step-header">
                         <div class="flow-step-number"></div>
-                        <div>
+                        <div class="flow-step-main">
                             <h2></h2>
                             <div class="meta"></div>
                             <div class="badge-row"></div>
                         </div>
-                        <div class="flow-step-actions">
-                            <button data-step-action="configure">Configure</button>
-                            <button data-step-action="up">Up</button>
-                            <button data-step-action="down">Down</button>
-                            <button class="danger" data-step-action="remove">Remove</button>
-                        </div>
+                    </div>
+                    <div class="flow-step-actions">
+                        <button data-step-action="configure">Configure</button>
+                        <button data-step-action="up">Up</button>
+                        <button data-step-action="down">Down</button>
+                        <button class="danger" data-step-action="remove">Remove</button>
                     </div>
                     <div class="binding-summary"></div>
+                    <div class="list-bindings">
+                        <div data-list-bindings></div>
+                        <button data-step-action="add-binding">Add Binding</button>
+                    </div>
                 `;
                 $('.flow-step-number', step).textContent = String(index + 1);
                 $('h2', step).textContent = node.label || ability?.label || node.ability_id;
                 $('.meta', step).textContent = node.ability_id;
+                const props = schemaProperties(ability?.input_schema);
                 const badges = $('.badge-row', step);
                 if (ability?.category) {
                     badges.append(badge(ability.category));
@@ -1336,8 +1348,13 @@
                 } else {
                     summary.innerHTML = '<div class="notice">No input bindings.</div>';
                 }
+                renderBindings(node, props, $('[data-list-bindings]', step));
                 step.addEventListener('click', (event) => {
                     const action = event.target.closest('[data-step-action]')?.dataset.stepAction;
+                    if (!action && event.target.closest('input, select, textarea')) {
+                        state.selectedNodeId = node.id;
+                        return;
+                    }
                     if (!action) {
                         state.selectedNodeId = node.id;
                         render();
@@ -1349,6 +1366,11 @@
                         moveNode(index, -1);
                     } else if (action === 'down') {
                         moveNode(index, 1);
+                    } else if (action === 'add-binding') {
+                        state.selectedNodeId = node.id;
+                        node.bindings = node.bindings || [];
+                        node.bindings.push(defaultBindingForNode(node, props));
+                        markDirty();
                     } else if (action === 'remove') {
                         removeNode(node.id);
                     }
@@ -1523,17 +1545,14 @@
             const node = nodeById(state.selectedNodeId);
             if (!node) {
                 inspector.innerHTML = `
-                    <div data-output-settings></div>
                     <div class="empty">Select a node to configure inputs and bindings.</div>
                 `;
-                renderOutputSettings();
                 return;
             }
             const ability = abilityById(node.ability_id);
             const props = schemaProperties(ability?.input_schema);
             const activeTarget = ensureActiveBindingTarget(node, props);
             inspector.innerHTML = `
-                <div data-output-settings></div>
                 <div class="field">
                     <label>Node label</label>
                     <input type="text" data-node-label>
@@ -1561,7 +1580,6 @@
                 </div>
                 <button class="danger" data-action="remove-node">Remove Node</button>
             `;
-            renderOutputSettings();
             $('[data-node-label]', inspector).value = node.label || ability?.label || node.ability_id;
             $('[data-node-args]', inspector).value = JSON.stringify(node.args || {}, null, 2);
 
@@ -1604,7 +1622,7 @@
             });
             $('[data-action="add-binding"]', inspector).addEventListener('click', () => {
                 node.bindings = node.bindings || [];
-                node.bindings.push({ target: props[0]?.name || '', source: state.graph.nodes[0]?.id || '', path: '' });
+                node.bindings.push(defaultBindingForNode(node, props));
                 markDirty();
                 renderInspector();
             });
@@ -1615,48 +1633,6 @@
 
             renderOutputPaths(node);
             renderBindings(node, props);
-        };
-
-        const renderOutputSettings = () => {
-            const container = $('[data-output-settings]');
-            if (!container) {
-                return;
-            }
-            const outputs = ensureOutputs();
-            const labels = {
-                dashboard: 'Dashboard widget',
-                masterbar_menu: 'Masterbar dropdown',
-                masterbar_graph: 'Masterbar line graph'
-            };
-            container.innerHTML = `
-                <div class="schema">
-                    <h3>Pipe Outputs</h3>
-                    <div class="notice">Empty paths show the final node result. Use a dot path to show a specific value.</div>
-                    <div data-output-settings-list></div>
-                </div>
-            `;
-            const list = $('[data-output-settings-list]', container);
-            for (const key of Object.keys(labels)) {
-                const settings = outputs[key];
-                const item = document.createElement('div');
-                item.className = 'output-setting';
-                item.innerHTML = `
-                    <label><input type="checkbox" data-output-enabled> <span></span></label>
-                    <input type="text" data-output-path placeholder="Optional output path">
-                `;
-                $('span', item).textContent = labels[key];
-                $('[data-output-enabled]', item).checked = !!settings.enabled;
-                $('[data-output-path]', item).value = settings.path || '';
-                $('[data-output-enabled]', item).addEventListener('change', (event) => {
-                    outputs[key].enabled = event.target.checked;
-                    markDirty();
-                });
-                $('[data-output-path]', item).addEventListener('input', (event) => {
-                    outputs[key].path = event.target.value;
-                    markDirty();
-                });
-                list.append(item);
-            }
         };
 
         const renderOutputPaths = (node) => {
@@ -1702,8 +1678,10 @@
             }
         };
 
-        const renderBindings = (node, props) => {
-            const container = $('[data-bindings]');
+        const renderBindings = (node, props, container = $('[data-bindings]')) => {
+            if (!container) {
+                return;
+            }
             const sourceNodes = state.graph.nodes.filter((candidate) => candidate.id !== node.id);
             node.bindings = node.bindings || [];
             if (!node.bindings.length) {
@@ -1748,7 +1726,7 @@
                     binding.source = event.target.value;
                     syncEdgesFromBindings();
                     markDirty();
-                    renderGraph();
+                    render();
                 });
                 $('[data-binding-path]', element).addEventListener('input', (event) => {
                     binding.path = event.target.value;

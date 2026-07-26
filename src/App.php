@@ -347,6 +347,34 @@ class App extends BaseApp {
             'execute_callback'    => [ $this, 'ability_join_text' ],
             'meta'                => $this->ability_meta( true, false, true, __( 'Use this to make a digest, prompt, note, or compact text summary from list output.', 'pipes' ) ),
         ] );
+
+        foreach ( $this->output_ability_labels() as $ability_id => $label ) {
+            $this->register_pipe_ability( $ability_id, [
+                'label'               => $label,
+                'description'         => __( 'Publishes a bound pipe value into a WordPress surface.', 'pipes' ),
+                'input_schema'        => [
+                    'type'                 => 'object',
+                    'required'             => [ 'value' ],
+                    'properties'           => [
+                        'value' => [
+                            'type'        => [ 'object', 'array', 'string', 'number', 'integer', 'boolean', 'null' ],
+                            'description' => __( 'Value to publish. Bind this to an upstream output field.', 'pipes' ),
+                        ],
+                    ],
+                    'additionalProperties' => false,
+                ],
+                'output_schema'       => [
+                    'type'       => 'object',
+                    'properties' => [
+                        'value' => [
+                            'type' => [ 'object', 'array', 'string', 'number', 'integer', 'boolean', 'null' ],
+                        ],
+                    ],
+                ],
+                'execute_callback'    => [ $this, 'ability_output_sink' ],
+                'meta'                => $this->ability_meta( true, false, true, __( 'Use this as the last box in a pipe to make its output visible in WordPress.', 'pipes' ) ),
+            ] );
+        }
     }
 
     public function rest_get_abilities() {
@@ -664,32 +692,53 @@ class App extends BaseApp {
         ];
     }
 
+    public function ability_output_sink( $input ): array {
+        $input = is_array( $input ) ? $input : [];
+
+        return [
+            'value' => $input['value'] ?? null,
+        ];
+    }
+
     public function register_dashboard_widgets(): void {
         if ( ! function_exists( 'wp_add_dashboard_widget' ) ) {
             return;
         }
 
         foreach ( $this->get_output_pipes( 'dashboard' ) as $post ) {
-            wp_add_dashboard_widget(
-                'pipes_output_' . $post->ID,
-                sprintf( __( 'Pipe: %s', 'pipes' ), $post->post_title ),
-                [ $this, 'render_dashboard_output_widget' ],
-                null,
-                [ 'post_id' => $post->ID ]
-            );
+            foreach ( $this->get_output_targets( $post, 'dashboard' ) as $target ) {
+                wp_add_dashboard_widget(
+                    'pipes_output_' . $post->ID . '_' . $target['node_id'],
+                    sprintf( __( 'Pipe: %s', 'pipes' ), $target['label'] ),
+                    [ $this, 'render_dashboard_output_widget' ],
+                    null,
+                    [
+                        'post_id'    => $post->ID,
+                        'output_key' => 'dashboard',
+                        'node_id'    => $target['node_id'],
+                    ]
+                );
+            }
         }
     }
 
     public function render_dashboard_output_widget( $post, array $args = [] ): void {
         $post_id = isset( $args['args']['post_id'] ) ? (int) $args['args']['post_id'] : 0;
+        $node_id = isset( $args['args']['node_id'] ) ? (string) $args['args']['node_id'] : '';
         $pipe    = get_post( $post_id );
         if ( ! $pipe || self::POST_TYPE !== $pipe->post_type ) {
             echo '<p>' . esc_html__( 'Pipe not found.', 'pipes' ) . '</p>';
             return;
         }
 
+        $target = $this->get_output_target( $pipe, 'dashboard', $node_id );
+        if ( null === $target ) {
+            echo '<p>' . esc_html__( 'Output node not found.', 'pipes' ) . '</p>';
+            return;
+        }
+
         echo '<div class="pipes-output pipes-output-dashboard">';
-        echo $this->render_pipe_output_html( $pipe, 'dashboard' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+        echo $this->render_pipe_output_html( $pipe, $target ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
         echo '</div>';
     }
 
@@ -712,34 +761,37 @@ class App extends BaseApp {
         ] );
 
         foreach ( $graph_pipes as $pipe ) {
-            $settings = $this->get_output_settings( $pipe, 'masterbar_graph' );
-            $value    = $this->get_pipe_output_value( $pipe, $settings['path'] );
-            $wp_admin_bar->add_node( [
-                'id'     => 'pipes-graph-' . $pipe->ID,
-                'parent' => 'pipes-outputs',
-                'title'  => $this->render_sparkline_title( $pipe->post_title, $value ),
-                'href'   => home_url( '/pipes/' ),
-                'meta'   => [
-                    'class' => 'pipes-masterbar-graph',
-                ],
-            ] );
+            foreach ( $this->get_output_targets( $pipe, 'masterbar_graph' ) as $target ) {
+                $value = $this->get_pipe_output_value( $pipe, $target );
+                $wp_admin_bar->add_node( [
+                    'id'     => 'pipes-graph-' . $pipe->ID . '-' . $target['node_id'],
+                    'parent' => 'pipes-outputs',
+                    'title'  => $this->render_sparkline_title( $target['label'], $value ),
+                    'href'   => home_url( '/pipes/' ),
+                    'meta'   => [
+                        'class' => 'pipes-masterbar-graph',
+                    ],
+                ] );
+            }
         }
 
         foreach ( $menu_pipes as $pipe ) {
-            $wp_admin_bar->add_node( [
-                'id'     => 'pipes-menu-' . $pipe->ID,
-                'parent' => 'pipes-outputs',
-                'title'  => esc_html( $pipe->post_title ),
-                'href'   => home_url( '/pipes/' ),
-            ] );
-
-            foreach ( $this->get_masterbar_menu_items( $pipe ) as $index => $item ) {
+            foreach ( $this->get_output_targets( $pipe, 'masterbar_menu' ) as $target ) {
                 $wp_admin_bar->add_node( [
-                    'id'     => 'pipes-menu-' . $pipe->ID . '-' . $index,
-                    'parent' => 'pipes-menu-' . $pipe->ID,
-                    'title'  => esc_html( $item ),
+                    'id'     => 'pipes-menu-' . $pipe->ID . '-' . $target['node_id'],
+                    'parent' => 'pipes-outputs',
+                    'title'  => esc_html( $target['label'] ),
                     'href'   => home_url( '/pipes/' ),
                 ] );
+
+                foreach ( $this->get_masterbar_menu_items( $pipe, $target ) as $index => $item ) {
+                    $wp_admin_bar->add_node( [
+                        'id'     => 'pipes-menu-' . $pipe->ID . '-' . $target['node_id'] . '-' . $index,
+                        'parent' => 'pipes-menu-' . $pipe->ID . '-' . $target['node_id'],
+                        'title'  => esc_html( $item ),
+                        'href'   => home_url( '/pipes/' ),
+                    ] );
+                }
             }
         }
     }
@@ -803,6 +855,25 @@ class App extends BaseApp {
         ];
     }
 
+    private function output_ability_labels(): array {
+        return [
+            'pipes/output-dashboard-text'   => __( 'Dashboard Text Output', 'pipes' ),
+            'pipes/output-dashboard-list'   => __( 'Dashboard List Output', 'pipes' ),
+            'pipes/output-masterbar-menu'   => __( 'Masterbar Menu Output', 'pipes' ),
+            'pipes/output-masterbar-graph'  => __( 'Masterbar Graph Output', 'pipes' ),
+        ];
+    }
+
+    private function output_abilities_for_key( string $output_key ): array {
+        $map = [
+            'dashboard'       => [ 'pipes/output-dashboard-text', 'pipes/output-dashboard-list' ],
+            'masterbar_menu'  => [ 'pipes/output-masterbar-menu' ],
+            'masterbar_graph' => [ 'pipes/output-masterbar-graph' ],
+        ];
+
+        return $map[ $output_key ] ?? [];
+    }
+
     private function get_output_pipes( string $output_key ): array {
         if ( ! is_user_logged_in() ) {
             return [];
@@ -819,8 +890,7 @@ class App extends BaseApp {
 
         $pipes = [];
         foreach ( $query->posts as $post ) {
-            $settings = $this->get_output_settings( $post, $output_key );
-            if ( ! empty( $settings['enabled'] ) ) {
+            if ( [] !== $this->get_output_targets( $post, $output_key ) ) {
                 $pipes[] = $post;
             }
         }
@@ -828,29 +898,71 @@ class App extends BaseApp {
         return $pipes;
     }
 
-    private function get_output_settings( \WP_Post $post, string $output_key ): array {
+    private function get_output_targets( \WP_Post $post, string $output_key ): array {
         $graph = $this->get_pipe_graph( $post );
-        $outputs = $graph['outputs'] ?? [];
-        return is_array( $outputs[ $output_key ] ?? null ) ? $outputs[ $output_key ] : [ 'enabled' => false, 'path' => '' ];
+        $ability_ids = $this->output_abilities_for_key( $output_key );
+        $targets = [];
+        foreach ( (array) ( $graph['nodes'] ?? [] ) as $node ) {
+            $ability_id = (string) ( $node['ability_id'] ?? '' );
+            if ( ! in_array( $ability_id, $ability_ids, true ) ) {
+                continue;
+            }
+
+            $targets[] = [
+                'output_key'  => $output_key,
+                'ability_id'  => $ability_id,
+                'node_id'     => (string) ( $node['id'] ?? '' ),
+                'label'       => (string) ( $node['label'] ?: $post->post_title ),
+                'render_mode' => $this->render_mode_for_output_ability( $ability_id ),
+            ];
+        }
+
+        return $targets;
     }
 
-    private function get_pipe_output_value( \WP_Post $post, string $path = '' ) {
+    private function get_output_target( \WP_Post $post, string $output_key, string $node_id ): ?array {
+        foreach ( $this->get_output_targets( $post, $output_key ) as $target ) {
+            if ( $target['node_id'] === $node_id ) {
+                return $target;
+            }
+        }
+
+        return null;
+    }
+
+    private function render_mode_for_output_ability( string $ability_id ): string {
+        if ( 'pipes/output-dashboard-text' === $ability_id ) {
+            return 'text';
+        }
+
+        if ( 'pipes/output-dashboard-list' === $ability_id || 'pipes/output-masterbar-menu' === $ability_id ) {
+            return 'list';
+        }
+
+        if ( 'pipes/output-masterbar-graph' === $ability_id ) {
+            return 'graph';
+        }
+
+        return 'auto';
+    }
+
+    private function get_pipe_output_value( \WP_Post $post, array $target ) {
         $run = $this->get_cached_pipe_run( $post );
         if ( is_wp_error( $run ) ) {
             return $run;
         }
 
-        if ( '' !== trim( $path ) ) {
-            return $this->get_path_value( $run, $path );
+        $node_id = (string) ( $target['node_id'] ?? '' );
+        if ( '' !== $node_id ) {
+            $node_result = $run['results'][ $node_id ]['result'] ?? null;
+            if ( is_array( $node_result ) && array_key_exists( 'value', $node_result ) ) {
+                return $node_result['value'];
+            }
+
+            return $node_result;
         }
 
-        $results = isset( $run['results'] ) && is_array( $run['results'] ) ? $run['results'] : [];
-        if ( [] === $results ) {
-            return $run;
-        }
-
-        $last = end( $results );
-        return is_array( $last ) && array_key_exists( 'result', $last ) ? $last['result'] : $last;
+        return null;
     }
 
     private function get_cached_pipe_run( \WP_Post $post ) {
@@ -866,12 +978,15 @@ class App extends BaseApp {
         return $result;
     }
 
-    private function render_pipe_output_html( \WP_Post $post, string $output_key ): string {
-        $settings = $this->get_output_settings( $post, $output_key );
-        $value    = $this->get_pipe_output_value( $post, $settings['path'] );
+    private function render_pipe_output_html( \WP_Post $post, array $target ): string {
+        $value = $this->get_pipe_output_value( $post, $target );
 
         if ( is_wp_error( $value ) ) {
             return '<p>' . esc_html( $value->get_error_message() ) . '</p>';
+        }
+
+        if ( 'text' === ( $target['render_mode'] ?? '' ) ) {
+            return '<p>' . esc_html( $this->stringify_glue_value( $value ) ) . '</p>';
         }
 
         return $this->render_value_html( $value );
@@ -930,9 +1045,8 @@ class App extends BaseApp {
         return '<pre>' . esc_html( $this->stringify_glue_value( $value ) ) . '</pre>';
     }
 
-    private function get_masterbar_menu_items( \WP_Post $post ): array {
-        $settings = $this->get_output_settings( $post, 'masterbar_menu' );
-        $value    = $this->get_pipe_output_value( $post, $settings['path'] );
+    private function get_masterbar_menu_items( \WP_Post $post, array $target ): array {
+        $value = $this->get_pipe_output_value( $post, $target );
         if ( is_wp_error( $value ) ) {
             return [ $value->get_error_message() ];
         }
@@ -1086,25 +1200,9 @@ class App extends BaseApp {
         }
 
         return [
-            'nodes'   => $nodes,
-            'edges'   => $edges,
-            'outputs' => $this->sanitize_outputs( $graph['outputs'] ?? [] ),
+            'nodes' => $nodes,
+            'edges' => $edges,
         ];
-    }
-
-    private function sanitize_outputs( $outputs ): array {
-        $outputs = is_array( $outputs ) ? $outputs : [];
-        $clean   = [];
-
-        foreach ( [ 'dashboard', 'masterbar_menu', 'masterbar_graph' ] as $key ) {
-            $settings = isset( $outputs[ $key ] ) && is_array( $outputs[ $key ] ) ? $outputs[ $key ] : [];
-            $clean[ $key ] = [
-                'enabled' => ! empty( $settings['enabled'] ),
-                'path'    => sanitize_text_field( (string) ( $settings['path'] ?? '' ) ),
-            ];
-        }
-
-        return $clean;
     }
 
     private function sanitize_bindings( $bindings ): array {
@@ -1514,31 +1612,47 @@ class App extends BaseApp {
                 ],
             ],
             [
-                'id'          => 'flight-log-dashboard',
-                'title'       => __( 'Flight Log Dashboard', 'pipes' ),
-                'description' => __( 'Fetch flight statistics and a short list of recent matching flights.', 'pipes' ),
-                'requires'    => [ 'flight-log/get-summary', 'flight-log/search-flights' ],
+                'id'          => 'latest-flight-logs-dashboard',
+                'title'       => __( 'Latest Flight Logs Dashboard', 'pipes' ),
+                'description' => __( 'Show the latest five logged flights in a named WordPress dashboard widget.', 'pipes' ),
+                'requires'    => [ 'flight-log/search-flights', 'pipes/limit-items', 'pipes/output-dashboard-list' ],
                 'graph'       => [
                     'nodes' => [
                         [
-                            'id'         => 'summary',
-                            'ability_id' => 'flight-log/get-summary',
-                            'label'      => __( 'Get flight summary', 'pipes' ),
-                            'args'       => [],
+                            'id'         => 'flights',
+                            'ability_id' => 'flight-log/search-flights',
+                            'label'      => __( 'Find logged flights', 'pipes' ),
+                            'args'       => [
+                                'planned' => false,
+                                'limit'   => 25,
+                            ],
                             'bindings'   => [],
-                            'position'   => [ 'x' => 28, 'y' => 52 ],
+                            'position'   => [ 'x' => 28, 'y' => 64 ],
                         ],
                         [
-                            'id'         => 'recent',
-                            'ability_id' => 'flight-log/search-flights',
-                            'label'      => __( 'Find recent flights', 'pipes' ),
-                            'args'       => [ 'limit' => 10 ],
-                            'bindings'   => [],
-                            'position'   => [ 'x' => 328, 'y' => 92 ],
+                            'id'         => 'latest-five',
+                            'ability_id' => 'pipes/limit-items',
+                            'label'      => __( 'Keep latest five', 'pipes' ),
+                            'args'       => [ 'limit' => 5 ],
+                            'bindings'   => [
+                                [ 'target' => 'items', 'source' => 'flights', 'path' => 'flights' ],
+                            ],
+                            'position'   => [ 'x' => 328, 'y' => 64 ],
+                        ],
+                        [
+                            'id'         => 'dashboard',
+                            'ability_id' => 'pipes/output-dashboard-list',
+                            'label'      => __( 'Latest 5 Flight Logs', 'pipes' ),
+                            'args'       => [],
+                            'bindings'   => [
+                                [ 'target' => 'value', 'source' => 'latest-five', 'path' => 'items' ],
+                            ],
+                            'position'   => [ 'x' => 628, 'y' => 64 ],
                         ],
                     ],
                     'edges' => [
-                        [ 'from' => 'summary', 'to' => 'recent' ],
+                        [ 'from' => 'flights', 'to' => 'latest-five' ],
+                        [ 'from' => 'latest-five', 'to' => 'dashboard' ],
                     ],
                 ],
             ],

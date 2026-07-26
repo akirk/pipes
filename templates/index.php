@@ -1102,11 +1102,11 @@
         const isOutputNode = (node) => String(node.ability_id || '').startsWith('pipes/output-');
 
         const compactPreview = (value) => {
-            if (value === undefined) {
-                return 'Run the pipe to preview this output.';
-            }
             if (value === null) {
                 return 'null';
+            }
+            if (value === undefined) {
+                return 'undefined';
             }
             if (Array.isArray(value)) {
                 return JSON.stringify(value.slice(0, 5), null, 2);
@@ -1802,12 +1802,18 @@
             if (!container || !isOutputNode(node)) {
                 return;
             }
-            const result = state.lastRunResults[node.id]?.result;
+            const run = state.lastRunResults[node.id];
+            if (!run) {
+                container.hidden = true;
+                return;
+            }
+            const result = run.result;
             const value = result && typeof result === 'object' && Object.prototype.hasOwnProperty.call(result, 'value') ?
                 result.value :
                 undefined;
+            const inputValue = run.input && Object.prototype.hasOwnProperty.call(run.input, 'value') ? run.input.value : undefined;
             container.hidden = false;
-            $('pre', container).textContent = compactPreview(value);
+            $('pre', container).textContent = `Input value:\n${compactPreview(inputValue)}\n\nRendered value:\n${compactPreview(value)}`;
         };
 
         const moveNode = (index, direction) => {

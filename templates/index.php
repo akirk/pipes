@@ -746,7 +746,8 @@
     (() => {
         const config = {
             restUrl: <?php echo wp_json_encode( esc_url_raw( rest_url( 'pipes/v1/' ) ) ); ?>,
-            nonce: <?php echo wp_json_encode( wp_create_nonce( 'wp_rest' ) ); ?>
+            nonce: <?php echo wp_json_encode( wp_create_nonce( 'wp_rest' ) ); ?>,
+            build: <?php echo wp_json_encode( (string) filemtime( __FILE__ ) ); ?>
         };
 
         const state = {
@@ -2440,9 +2441,10 @@
             .then(() => {
                 const pipeId = Number(new URLSearchParams(window.location.search).get('pipe') || 0);
                 if (pipeId > 0) {
-                    return loadPipe(pipeId, false);
+                    return loadPipe(pipeId, false).then(() => setStatus(`Loaded build ${config.build}`));
                 }
                 render();
+                setStatus(`Loaded build ${config.build}`);
                 return null;
             })
             .catch((error) => setStatus(error.message, true));

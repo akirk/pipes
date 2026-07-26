@@ -23,6 +23,7 @@ class App extends BaseApp {
         add_action( 'admin_bar_menu', [ $this, 'register_admin_bar_outputs' ], 120 );
         add_action( 'admin_head', [ $this, 'output_styles' ] );
         add_action( 'wp_head', [ $this, 'output_styles' ] );
+        add_action( 'send_headers', [ $this, 'send_app_no_cache_headers' ] );
         add_action( 'admin_post_pipes_run_dashboard_output', [ $this, 'handle_dashboard_output_submission' ] );
         add_action( 'rest_api_init', [ $this, 'register_rest_routes' ] );
         add_action( 'wp_abilities_api_categories_init', [ $this, 'register_ability_category' ] );
@@ -43,6 +44,15 @@ class App extends BaseApp {
     protected function setup_routes(): void {}
 
     protected function setup_menu(): void {}
+
+    public function send_app_no_cache_headers(): void {
+        $path = trim( (string) wp_parse_url( $_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH ), '/' ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+        if ( $this->get_url_path() !== $path ) {
+            return;
+        }
+
+        nocache_headers();
+    }
 
     public function register_post_types(): void {
         register_post_type( self::POST_TYPE, [

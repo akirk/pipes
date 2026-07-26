@@ -171,6 +171,7 @@
         .canvas {
             position: relative;
             overflow: auto;
+            overscroll-behavior: contain;
             min-height: 28rem;
             padding: 1.25rem;
             background-image:
@@ -200,7 +201,14 @@
             background: var(--pipes-surface);
             box-shadow: 0 10px 25px color-mix(in srgb, #000 9%, transparent);
             padding: 0.85rem;
+            cursor: grab;
+            touch-action: none;
+            user-select: none;
             z-index: 2;
+        }
+        .node.dragging {
+            cursor: grabbing;
+            z-index: 6;
         }
         .node.selected {
             border-color: var(--pipes-accent);
@@ -754,17 +762,75 @@
             render();
         };
 
+        const attachNodeDrag = (element, node) => {
+            let drag = null;
+            element.addEventListener('pointerdown', (event) => {
+                if (event.button !== 0 || event.target.closest('button, input, textarea, select, a')) {
+                    return;
+                }
+                event.preventDefault();
+                state.selectedNodeId = node.id;
+                drag = {
+                    pointerId: event.pointerId,
+                    startX: event.clientX,
+                    startY: event.clientY,
+                    nodeX: node.position.x,
+                    nodeY: node.position.y,
+                    moved: false
+                };
+                element.classList.add('dragging');
+                element.setPointerCapture(event.pointerId);
+                renderInspector();
+            });
+            element.addEventListener('pointermove', (event) => {
+                if (!drag || drag.pointerId !== event.pointerId) {
+                    return;
+                }
+                event.preventDefault();
+                const dx = event.clientX - drag.startX;
+                const dy = event.clientY - drag.startY;
+                if (Math.abs(dx) + Math.abs(dy) > 3) {
+                    drag.moved = true;
+                    element.dataset.dragged = 'true';
+                }
+                node.position.x = Math.max(16, Math.round(drag.nodeX + dx));
+                node.position.y = Math.max(16, Math.round(drag.nodeY + dy));
+                element.style.left = `${node.position.x}px`;
+                element.style.top = `${node.position.y}px`;
+                renderEdges();
+            });
+            const finish = (event) => {
+                if (!drag || drag.pointerId !== event.pointerId) {
+                    return;
+                }
+                event.preventDefault();
+                element.classList.remove('dragging');
+                element.releasePointerCapture(event.pointerId);
+                if (drag.moved) {
+                    markDirty();
+                    render();
+                }
+                drag = null;
+                window.setTimeout(() => {
+                    delete element.dataset.dragged;
+                }, 0);
+            };
+            element.addEventListener('pointerup', finish);
+            element.addEventListener('pointercancel', finish);
+        };
+
         const addNode = (ability) => {
             const index = state.graph.nodes.length;
             const id = `node-${Date.now().toString(36)}-${index}`;
             const previous = state.graph.nodes[index - 1];
+            const mobile = window.matchMedia('(max-width: 760px)').matches;
             state.graph.nodes.push({
                 id,
                 ability_id: ability.id,
                 label: ability.label,
                 args: defaultArgsForAbility(ability),
                 bindings: [],
-                position: { x: 28 + index * 300, y: 42 + (index % 3) * 38 }
+                position: mobile ? { x: 36, y: 42 + index * 245 } : { x: 28 + index * 320, y: 42 + (index % 3) * 48 }
             });
             if (previous) {
                 state.graph.edges.push({ from: previous.id, to: id });
@@ -1063,6 +1129,10 @@
                     outputPorts.append(output);
                 }
                 element.addEventListener('click', (event) => {
+                    if (element.dataset.dragged === 'true') {
+                        event.preventDefault();
+                        return;
+                    }
                     if (event.target.matches('[data-move]')) {
                         const direction = Number(event.target.dataset.move);
                         node.position.x = Math.max(28, node.position.x + direction * 40);
@@ -1072,6 +1142,7 @@
                     }
                     render();
                 });
+                attachNodeDrag(element, node);
                 graph.append(element);
             }
 
@@ -1083,6 +1154,8 @@
             svg.innerHTML = '';
             const maxX = Math.max(1200, ...state.graph.nodes.map((node) => (node.position?.x || 0) + 360));
             const maxY = Math.max(720, ...state.graph.nodes.map((node) => (node.position?.y || 0) + 260));
+            $('[data-graph]').style.width = `${maxX}px`;
+            $('[data-graph]').style.height = `${maxY}px`;
             svg.setAttribute('width', String(maxX));
             svg.setAttribute('height', String(maxY));
             const bindings = graphBindings();

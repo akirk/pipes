@@ -1397,7 +1397,14 @@ class App extends BaseApp {
 
             $result = $ability->execute( $input );
             if ( is_wp_error( $result ) ) {
-                return new \WP_Error( 'pipes_ability_failed', sprintf( __( '%1$s failed: %2$s', 'pipes' ), $details['label'], $result->get_error_message() ), [ 'status' => 500 ] );
+                return new \WP_Error(
+                    'pipes_ability_failed',
+                    sprintf( __( '%1$s failed: %2$s', 'pipes' ), $details['label'], $result->get_error_message() ),
+                    [
+                        'status'  => 500,
+                        'results' => $results,
+                    ]
+                );
             }
 
             $results[ $node['id'] ] = [

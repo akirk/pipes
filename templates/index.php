@@ -769,7 +769,10 @@
             });
             const data = await response.json().catch(() => ({}));
             if (!response.ok) {
-                throw new Error(data.message || data?.data?.message || 'Request failed');
+                const error = new Error(data.message || data?.data?.message || 'Request failed');
+                error.data = data.data || {};
+                error.response = data;
+                throw error;
             }
             return data;
         };
@@ -1315,19 +1318,28 @@
         const runPipe = async () => {
             setStatus('Running...');
             const userAnswers = collectUserAnswers();
-            const data = await request('run', {
-                method: 'POST',
-                body: JSON.stringify({
-                    pipe_id: state.selectedPipeId || 0,
-                    graph: state.graph,
-                    confirm_destructive: $('[data-confirm-destructive]')?.checked || false,
-                    user_answers: userAnswers
-                })
-            });
-            state.lastRunResults = data.results || {};
-            $('[data-output]').textContent = JSON.stringify(data, null, 2);
-            setStatus(state.dirty ? 'Unsaved changes' : 'Run complete');
-            render();
+            try {
+                const data = await request('run', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        pipe_id: state.selectedPipeId || 0,
+                        graph: state.graph,
+                        confirm_destructive: $('[data-confirm-destructive]')?.checked || false,
+                        user_answers: userAnswers
+                    })
+                });
+                state.lastRunResults = data.results || {};
+                $('[data-output]').textContent = JSON.stringify(data, null, 2);
+                setStatus(state.dirty ? 'Unsaved changes' : 'Run complete');
+                render();
+            } catch (error) {
+                if (error.data?.results) {
+                    state.lastRunResults = error.data.results;
+                    $('[data-output]').textContent = JSON.stringify(error.response || { message: error.message, data: error.data }, null, 2);
+                    render();
+                }
+                setStatus(error.message, true);
+            }
         };
 
         const loadPipes = async () => {

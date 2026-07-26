@@ -274,6 +274,46 @@
             border-top: 1px solid var(--pipes-border);
         }
         .schema-row:first-of-type { border-top: 0; }
+        .input-target {
+            width: 100%;
+            text-align: left;
+            border: 1px solid transparent;
+            background: transparent;
+            padding: 0.45rem;
+        }
+        .input-target.active {
+            border-color: var(--pipes-accent);
+            background: color-mix(in srgb, var(--pipes-accent) 10%, transparent);
+        }
+        .chip-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem;
+            margin-top: 0.45rem;
+        }
+        .path-chip {
+            max-width: 100%;
+            border-radius: 999px;
+            padding: 0.35rem 0.55rem;
+            color: var(--pipes-link);
+            overflow-wrap: anywhere;
+            text-align: left;
+        }
+        .path-chip.bound {
+            border-color: var(--pipes-accent);
+            color: var(--pipes-accent);
+            background: color-mix(in srgb, var(--pipes-accent) 8%, transparent);
+        }
+        .source-panel {
+            border: 1px solid var(--pipes-border);
+            border-radius: var(--pipes-radius);
+            padding: 0.65rem;
+            margin-bottom: 0.65rem;
+        }
+        .source-panel h4 {
+            margin: 0 0 0.2rem;
+            font-size: 0.84rem;
+        }
         .binding {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -453,6 +493,8 @@
             search: '',
             title: 'Untitled Pipe',
             graph: { nodes: [], edges: [] },
+            lastRunResults: {},
+            activeBindingTarget: '',
             dirty: false
         };
 
@@ -489,6 +531,8 @@
         const abilityById = (id) => state.abilities.find((ability) => ability.id === id);
         const nodeById = (id) => state.graph.nodes.find((node) => node.id === id);
 
+        const selectedNode = () => nodeById(state.selectedNodeId);
+
         const schemaProperties = (schema) => {
             if (!schema || !schema.properties || typeof schema.properties !== 'object') {
                 return [];
@@ -510,6 +554,82 @@
                 }
             }
             return args;
+        };
+
+        const flattenPaths = (value, prefix = '', paths = []) => {
+            if (paths.length >= 40) {
+                return paths;
+            }
+            if (value === null || typeof value !== 'object') {
+                if (prefix) {
+                    paths.push({ path: prefix, value });
+                }
+                return paths;
+            }
+            if (Array.isArray(value)) {
+                if (prefix) {
+                    paths.push({ path: prefix, value });
+                }
+                value.slice(0, 3).forEach((item, index) => {
+                    flattenPaths(item, prefix ? `${prefix}.${index}` : `${index}`, paths);
+                });
+                return paths;
+            }
+            if (prefix) {
+                paths.push({ path: prefix, value });
+            }
+            Object.entries(value).slice(0, 16).forEach(([key, item]) => {
+                flattenPaths(item, prefix ? `${prefix}.${key}` : key, paths);
+            });
+            return paths;
+        };
+
+        const formatPathValue = (value) => {
+            if (value === null) {
+                return 'null';
+            }
+            if (Array.isArray(value)) {
+                return `${value.length} items`;
+            }
+            if (typeof value === 'object') {
+                return 'object';
+            }
+            const text = String(value);
+            return text.length > 44 ? `${text.slice(0, 41)}...` : text;
+        };
+
+        const ensureActiveBindingTarget = (node, props) => {
+            if (!node) {
+                state.activeBindingTarget = '';
+                return '';
+            }
+            const names = props.map((prop) => prop.name);
+            if (state.activeBindingTarget && (!names.length || names.includes(state.activeBindingTarget))) {
+                return state.activeBindingTarget;
+            }
+            state.activeBindingTarget = names[0] || '';
+            return state.activeBindingTarget;
+        };
+
+        const bindPathToActiveInput = (sourceId, path) => {
+            const node = selectedNode();
+            if (!node || !state.activeBindingTarget) {
+                setStatus('Select an input before choosing an output path.', true);
+                return;
+            }
+            node.bindings = node.bindings || [];
+            const existing = node.bindings.find((binding) => binding.target === state.activeBindingTarget);
+            if (existing) {
+                existing.source = sourceId;
+                existing.path = path;
+            } else {
+                node.bindings.push({ target: state.activeBindingTarget, source: sourceId, path });
+            }
+            node.args = node.args || {};
+            delete node.args[state.activeBindingTarget];
+            syncEdgesFromBindings();
+            markDirty();
+            render();
         };
 
         const addNode = (ability) => {
@@ -537,6 +657,8 @@
             state.selectedNodeId = null;
             state.title = 'Untitled Pipe';
             state.graph = { nodes: [], edges: [] };
+            state.lastRunResults = {};
+            state.activeBindingTarget = '';
             state.dirty = false;
             $('[data-title]').value = state.title;
             $('[data-output]').textContent = '{}';
@@ -544,15 +666,21 @@
             render();
         };
 
-        const loadExample = (example) => {
-            state.selectedPipeId = null;
-            state.selectedNodeId = example.graph?.nodes?.[0]?.id || null;
-            state.title = example.title || 'Untitled Pipe';
-            state.graph = JSON.parse(JSON.stringify(example.graph || { nodes: [], edges: [] }));
-            state.dirty = true;
+        const loadExample = async (example) => {
+            setStatus('Loading starter...');
+            const data = await request(`examples/${example.id}`, { method: 'POST' });
+            state.selectedPipeId = data.pipe.id;
+            state.selectedNodeId = data.pipe.graph?.nodes?.[0]?.id || null;
+            state.title = data.pipe.title || example.title || 'Untitled Pipe';
+            state.graph = data.pipe.graph || { nodes: [], edges: [] };
+            state.lastRunResults = {};
+            state.activeBindingTarget = '';
+            state.dirty = false;
             $('[data-title]').value = state.title;
             $('[data-output]').textContent = '{}';
-            setStatus('Starter loaded. Save to keep it.');
+            setStatus('Starter pipe loaded');
+            await loadPipes();
+            await loadExamples();
             render();
         };
 
@@ -562,6 +690,8 @@
             state.title = data.pipe.title;
             state.graph = data.pipe.graph || { nodes: [], edges: [] };
             state.selectedNodeId = state.graph.nodes[0]?.id || null;
+            state.lastRunResults = {};
+            state.activeBindingTarget = '';
             state.dirty = false;
             $('[data-title]').value = state.title;
             $('[data-output]').textContent = '{}';
@@ -609,8 +739,10 @@
                     confirm_destructive: $('[data-confirm-destructive]')?.checked || false
                 })
             });
+            state.lastRunResults = data.results || {};
             $('[data-output]').textContent = JSON.stringify(data, null, 2);
             setStatus(state.dirty ? 'Unsaved changes' : 'Run complete');
+            render();
         };
 
         const loadPipes = async () => {
@@ -704,7 +836,10 @@
                 $('strong', button).textContent = example.title;
                 $('.meta', button).textContent = example.description || '';
                 $('.badge-row', button).append(badge(`${example.graph?.nodes?.length || 0} nodes`));
-                button.addEventListener('click', () => loadExample(example));
+                if (example.pipe_id) {
+                    $('.badge-row', button).append(badge('saved'));
+                }
+                button.addEventListener('click', () => loadExample(example).catch((error) => setStatus(error.message, true)));
                 list.append(button);
             }
         };
@@ -746,6 +881,12 @@
                 }
                 if (ability?.destructive) {
                     badges.append(badge('destructive', 'warn'));
+                }
+                if ((node.bindings || []).length) {
+                    badges.append(badge(`${node.bindings.length} bound`));
+                }
+                if (state.lastRunResults[node.id]) {
+                    badges.append(badge('has output'));
                 }
                 element.addEventListener('click', (event) => {
                     if (event.target.matches('[data-move]')) {
@@ -797,6 +938,7 @@
             }
             const ability = abilityById(node.ability_id);
             const props = schemaProperties(ability?.input_schema);
+            const activeTarget = ensureActiveBindingTarget(node, props);
             inspector.innerHTML = `
                 <div class="field">
                     <label>Node label</label>
@@ -804,7 +946,12 @@
                 </div>
                 <div class="schema">
                     <h3>Inputs</h3>
+                    <div class="notice">Choose the input you want to fill, then choose an output path below.</div>
                     <div data-schema></div>
+                </div>
+                <div class="schema">
+                    <h3>Available Outputs</h3>
+                    <div data-output-paths></div>
                 </div>
                 <div class="field">
                     <label>Base args JSON</label>
@@ -826,12 +973,23 @@
             const schema = $('[data-schema]', inspector);
             schema.innerHTML = props.length ? '' : '<div class="notice">This ability has no declared input schema.</div>';
             for (const prop of props) {
-                const row = document.createElement('div');
-                row.className = 'schema-row';
-                row.innerHTML = `<strong></strong><span class="meta"></span><span class="notice"></span>`;
+                const row = document.createElement('button');
+                row.type = 'button';
+                row.className = `input-target ${prop.name === activeTarget ? 'active' : ''}`;
+                row.innerHTML = `<strong></strong><span class="meta"></span><span class="notice"></span><div class="badge-row"></div>`;
                 $('strong', row).textContent = `${prop.name}${prop.required ? ' *' : ''}`;
                 $('.meta', row).textContent = prop.type;
                 $('.notice', row).textContent = prop.description;
+                const binding = (node.bindings || []).find((candidate) => candidate.target === prop.name);
+                if (binding) {
+                    $('.badge-row', row).append(badge(`${binding.source}.${binding.path || '(whole output)'}`));
+                } else if (Object.prototype.hasOwnProperty.call(node.args || {}, prop.name)) {
+                    $('.badge-row', row).append(badge('base arg'));
+                }
+                row.addEventListener('click', () => {
+                    state.activeBindingTarget = prop.name;
+                    renderInspector();
+                });
                 schema.append(row);
             }
 
@@ -863,7 +1021,51 @@
                 render();
             });
 
+            renderOutputPaths(node);
             renderBindings(node, props);
+        };
+
+        const renderOutputPaths = (node) => {
+            const container = $('[data-output-paths]');
+            const sourceNodes = state.graph.nodes.filter((candidate) => candidate.id !== node.id);
+            const panels = [];
+            for (const source of sourceNodes) {
+                const runResult = state.lastRunResults[source.id]?.result;
+                const paths = runResult === undefined ? [] : flattenPaths(runResult);
+                panels.push({ source, paths });
+            }
+
+            if (!panels.length) {
+                container.innerHTML = '<div class="notice">Add an upstream node to create a binding source.</div>';
+                return;
+            }
+
+            container.innerHTML = '';
+            for (const panel of panels) {
+                const section = document.createElement('div');
+                section.className = 'source-panel';
+                section.innerHTML = `<h4></h4><div class="meta"></div><div class="chip-row"></div>`;
+                $('h4', section).textContent = panel.source.label || panel.source.ability_id;
+                $('.meta', section).textContent = panel.paths.length ? 'Click a path to bind it to the selected input.' : 'Run the pipe to inspect real output paths, or use the manual bindings below.';
+                const chips = $('.chip-row', section);
+                for (const item of panel.paths.slice(0, 24)) {
+                    const chip = document.createElement('button');
+                    chip.type = 'button';
+                    chip.className = 'path-chip';
+                    const binding = (node.bindings || []).find((candidate) => (
+                        candidate.target === state.activeBindingTarget &&
+                        candidate.source === panel.source.id &&
+                        candidate.path === item.path
+                    ));
+                    if (binding) {
+                        chip.classList.add('bound');
+                    }
+                    chip.textContent = `${item.path} = ${formatPathValue(item.value)}`;
+                    chip.addEventListener('click', () => bindPathToActiveInput(panel.source.id, item.path));
+                    chips.append(chip);
+                }
+                container.append(section);
+            }
         };
 
         const renderBindings = (node, props) => {

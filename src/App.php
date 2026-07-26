@@ -8,6 +8,7 @@ use WpApp\WpApp;
 class App extends BaseApp {
     public const POST_TYPE = 'pipes_pipe';
     public const REST_NAMESPACE = 'pipes/v1';
+    public const STARTER_META_KEY = '_pipes_starter_id';
 
     public function __construct() {
         $this->app = new WpApp( $this->get_template_dir(), $this->get_url_path(), [
@@ -65,6 +66,12 @@ class App extends BaseApp {
             'methods'             => 'GET',
             'callback'            => [ $this, 'rest_get_examples' ],
             'permission_callback' => [ $this, 'can_use_app' ],
+        ] );
+
+        register_rest_route( self::REST_NAMESPACE, '/examples/(?P<id>[a-z0-9-]+)', [
+            'methods'             => 'POST',
+            'callback'            => [ $this, 'rest_load_example' ],
+            'permission_callback' => [ $this, 'can_edit_pipes' ],
         ] );
 
         register_rest_route( self::REST_NAMESPACE, '/pipes', [
@@ -133,14 +140,9 @@ class App extends BaseApp {
             return;
         }
 
-        if ( function_exists( 'wp_has_ability' ) && wp_has_ability( 'pipes/run-pipe' ) ) {
-            return;
-        }
-
-        wp_register_ability( 'pipes/run-pipe', [
+        $this->register_pipe_ability( 'pipes/run-pipe', [
             'label'               => __( 'Run Pipe', 'pipes' ),
             'description'         => __( 'Runs a saved Pipes flow by ID and returns every node result.', 'pipes' ),
-            'category'            => 'pipes',
             'input_schema'        => [
                 'type'                 => 'object',
                 'required'             => [ 'pipe_id' ],
@@ -165,17 +167,181 @@ class App extends BaseApp {
                 ],
             ],
             'execute_callback'    => [ $this, 'ability_run_pipe' ],
-            'permission_callback' => function() {
-                return current_user_can( 'read' );
-            },
-            'meta'                => [
-                'annotations' => [
-                    'readonly'     => false,
-                    'destructive'  => false,
-                    'idempotent'   => false,
-                    'instructions' => __( 'Return a compact summary of each node result and note any failed node.', 'pipes' ),
+            'meta'                => $this->ability_meta( false, false, false, __( 'Return a compact summary of each node result and note any failed node.', 'pipes' ) ),
+        ] );
+
+        $this->register_pipe_ability( 'pipes/extract-path', [
+            'label'               => __( 'Extract Path', 'pipes' ),
+            'description'         => __( 'Extracts one dot-path value from an object, array, or scalar.', 'pipes' ),
+            'input_schema'        => [
+                'type'                 => 'object',
+                'required'             => [ 'value', 'path' ],
+                'properties'           => [
+                    'value' => [
+                        'type'        => [ 'object', 'array', 'string', 'number', 'integer', 'boolean', 'null' ],
+                        'description' => __( 'Source value to read from.', 'pipes' ),
+                    ],
+                    'path'  => [
+                        'type'        => 'string',
+                        'description' => __( 'Dot path such as articles.0.page_id. Empty returns the whole value.', 'pipes' ),
+                    ],
+                ],
+                'additionalProperties' => false,
+            ],
+            'output_schema'       => [
+                'type'       => 'object',
+                'properties' => [
+                    'value' => [
+                        'type'        => [ 'object', 'array', 'string', 'number', 'integer', 'boolean', 'null' ],
+                        'description' => __( 'Extracted value.', 'pipes' ),
+                    ],
                 ],
             ],
+            'execute_callback'    => [ $this, 'ability_extract_path' ],
+            'meta'                => $this->ability_meta( true, false, true, __( 'Use this to make an intermediate output path explicit and reusable.', 'pipes' ) ),
+        ] );
+
+        $this->register_pipe_ability( 'pipes/limit-items', [
+            'label'               => __( 'Limit Items', 'pipes' ),
+            'description'         => __( 'Takes a list and returns a slice of it.', 'pipes' ),
+            'input_schema'        => [
+                'type'                 => 'object',
+                'required'             => [ 'items' ],
+                'properties'           => [
+                    'items'  => [
+                        'type'        => 'array',
+                        'description' => __( 'Items to slice.', 'pipes' ),
+                        'items'       => [ 'type' => [ 'object', 'array', 'string', 'number', 'integer', 'boolean', 'null' ] ],
+                    ],
+                    'limit'  => [
+                        'type'        => 'integer',
+                        'description' => __( 'Maximum items to return. Defaults to 10.', 'pipes' ),
+                        'default'     => 10,
+                    ],
+                    'offset' => [
+                        'type'        => 'integer',
+                        'description' => __( 'Number of items to skip. Defaults to 0.', 'pipes' ),
+                        'default'     => 0,
+                    ],
+                ],
+                'additionalProperties' => false,
+            ],
+            'output_schema'       => $this->items_output_schema(),
+            'execute_callback'    => [ $this, 'ability_limit_items' ],
+            'meta'                => $this->ability_meta( true, false, true, __( 'Use this after search or list abilities before downstream detail calls.', 'pipes' ) ),
+        ] );
+
+        $this->register_pipe_ability( 'pipes/filter-items', [
+            'label'               => __( 'Filter Items', 'pipes' ),
+            'description'         => __( 'Filters a list by checking a dot-path value on each item.', 'pipes' ),
+            'input_schema'        => [
+                'type'                 => 'object',
+                'required'             => [ 'items', 'path' ],
+                'properties'           => [
+                    'items'    => [
+                        'type'        => 'array',
+                        'description' => __( 'Items to filter.', 'pipes' ),
+                        'items'       => [ 'type' => [ 'object', 'array', 'string', 'number', 'integer', 'boolean', 'null' ] ],
+                    ],
+                    'path'     => [
+                        'type'        => 'string',
+                        'description' => __( 'Dot path inside each item, such as title or author.name.', 'pipes' ),
+                    ],
+                    'contains' => [
+                        'type'        => 'string',
+                        'description' => __( 'Keep items whose path value contains this text.', 'pipes' ),
+                    ],
+                    'equals'   => [
+                        'type'        => 'string',
+                        'description' => __( 'Keep items whose path value equals this text.', 'pipes' ),
+                    ],
+                ],
+                'additionalProperties' => false,
+            ],
+            'output_schema'       => $this->items_output_schema(),
+            'execute_callback'    => [ $this, 'ability_filter_items' ],
+            'meta'                => $this->ability_meta( true, false, true, __( 'Use this to narrow list results before mapping, joining, or detail lookups.', 'pipes' ) ),
+        ] );
+
+        $this->register_pipe_ability( 'pipes/pluck-field', [
+            'label'               => __( 'Pluck Field', 'pipes' ),
+            'description'         => __( 'Reads one dot-path from each item in a list and returns the collected values.', 'pipes' ),
+            'input_schema'        => [
+                'type'                 => 'object',
+                'required'             => [ 'items', 'path' ],
+                'properties'           => [
+                    'items'  => [
+                        'type'        => 'array',
+                        'description' => __( 'Items to read from.', 'pipes' ),
+                        'items'       => [ 'type' => [ 'object', 'array', 'string', 'number', 'integer', 'boolean', 'null' ] ],
+                    ],
+                    'path'   => [
+                        'type'        => 'string',
+                        'description' => __( 'Dot path to read from each item.', 'pipes' ),
+                    ],
+                    'unique' => [
+                        'type'        => 'boolean',
+                        'description' => __( 'Remove duplicate scalar values.', 'pipes' ),
+                        'default'     => false,
+                    ],
+                ],
+                'additionalProperties' => false,
+            ],
+            'output_schema'       => [
+                'type'       => 'object',
+                'properties' => [
+                    'values' => [
+                        'type'  => 'array',
+                        'items' => [ 'type' => [ 'object', 'array', 'string', 'number', 'integer', 'boolean', 'null' ] ],
+                    ],
+                    'total'  => [ 'type' => 'integer' ],
+                ],
+            ],
+            'execute_callback'    => [ $this, 'ability_pluck_field' ],
+            'meta'                => $this->ability_meta( true, false, true, __( 'Use this to turn a list of objects into a list of titles, URLs, IDs, or other fields.', 'pipes' ) ),
+        ] );
+
+        $this->register_pipe_ability( 'pipes/join-text', [
+            'label'               => __( 'Join Text', 'pipes' ),
+            'description'         => __( 'Turns an array of values or item fields into one text string.', 'pipes' ),
+            'input_schema'        => [
+                'type'                 => 'object',
+                'required'             => [ 'items' ],
+                'properties'           => [
+                    'items'     => [
+                        'type'        => 'array',
+                        'description' => __( 'Values or items to join.', 'pipes' ),
+                        'items'       => [ 'type' => [ 'object', 'array', 'string', 'number', 'integer', 'boolean', 'null' ] ],
+                    ],
+                    'path'      => [
+                        'type'        => 'string',
+                        'description' => __( 'Optional dot path to read from each item before joining.', 'pipes' ),
+                    ],
+                    'separator' => [
+                        'type'        => 'string',
+                        'description' => __( 'Text between values. Defaults to a newline.', 'pipes' ),
+                        'default'     => "\n",
+                    ],
+                    'prefix'    => [
+                        'type'        => 'string',
+                        'description' => __( 'Optional text before every value.', 'pipes' ),
+                    ],
+                    'suffix'    => [
+                        'type'        => 'string',
+                        'description' => __( 'Optional text after every value.', 'pipes' ),
+                    ],
+                ],
+                'additionalProperties' => false,
+            ],
+            'output_schema'       => [
+                'type'       => 'object',
+                'properties' => [
+                    'text'  => [ 'type' => 'string' ],
+                    'total' => [ 'type' => 'integer' ],
+                ],
+            ],
+            'execute_callback'    => [ $this, 'ability_join_text' ],
+            'meta'                => $this->ability_meta( true, false, true, __( 'Use this to make a digest, prompt, note, or compact text summary from list output.', 'pipes' ) ),
         ] );
     }
 
@@ -225,10 +391,44 @@ class App extends BaseApp {
             }
 
             unset( $example['requires'] );
+            $example['pipe_id'] = $this->find_user_starter_pipe_id( $example['id'] );
             $examples[] = $example;
         }
 
         return rest_ensure_response( [ 'examples' => $examples ] );
+    }
+
+    public function rest_load_example( \WP_REST_Request $request ) {
+        $example = $this->get_starter_pipe( (string) $request['id'] );
+        if ( null === $example ) {
+            return new \WP_Error( 'pipes_example_not_found', __( 'Starter pipe not found.', 'pipes' ), [ 'status' => 404 ] );
+        }
+
+        $post_id = $this->find_user_starter_pipe_id( $example['id'] );
+        if ( $post_id > 0 ) {
+            $post = $this->get_pipe_post( $post_id );
+            if ( is_wp_error( $post ) ) {
+                return $post;
+            }
+
+            return rest_ensure_response( [ 'pipe' => $this->format_pipe( $post, true ) ] );
+        }
+
+        $post_id = wp_insert_post( wp_slash( [
+            'post_type'    => self::POST_TYPE,
+            'post_status'  => 'private',
+            'post_title'   => (string) $example['title'],
+            'post_content' => wp_json_encode( $this->sanitize_graph( $example['graph'] ) ),
+            'post_author'  => get_current_user_id(),
+        ] ), true );
+
+        if ( is_wp_error( $post_id ) ) {
+            return $post_id;
+        }
+
+        update_post_meta( $post_id, self::STARTER_META_KEY, sanitize_key( $example['id'] ) );
+
+        return rest_ensure_response( [ 'pipe' => $this->format_pipe( get_post( $post_id ), true ) ] );
     }
 
     public function rest_list_pipes() {
@@ -358,9 +558,151 @@ class App extends BaseApp {
         return $result;
     }
 
+    public function ability_extract_path( $input ): array {
+        $input = is_array( $input ) ? $input : [];
+        return [
+            'value' => $this->get_path_value( $input['value'] ?? null, (string) ( $input['path'] ?? '' ) ),
+        ];
+    }
+
+    public function ability_limit_items( $input ): array {
+        $input  = is_array( $input ) ? $input : [];
+        $items  = isset( $input['items'] ) && is_array( $input['items'] ) ? array_values( $input['items'] ) : [];
+        $total  = count( $items );
+        $limit  = max( 0, min( 500, isset( $input['limit'] ) ? absint( $input['limit'] ) : 10 ) );
+        $offset = max( 0, isset( $input['offset'] ) ? absint( $input['offset'] ) : 0 );
+
+        return [
+            'items'  => array_values( array_slice( $items, $offset, $limit ) ),
+            'total'  => $total,
+            'offset' => $offset,
+            'limit'  => $limit,
+        ];
+    }
+
+    public function ability_filter_items( $input ): array {
+        $input    = is_array( $input ) ? $input : [];
+        $items    = isset( $input['items'] ) && is_array( $input['items'] ) ? array_values( $input['items'] ) : [];
+        $path     = (string) ( $input['path'] ?? '' );
+        $contains = array_key_exists( 'contains', $input ) ? strtolower( (string) $input['contains'] ) : '';
+        $equals   = array_key_exists( 'equals', $input ) ? strtolower( (string) $input['equals'] ) : '';
+
+        $filtered = [];
+        foreach ( $items as $item ) {
+            $value = $this->get_path_value( $item, $path );
+            $text  = strtolower( $this->stringify_glue_value( $value ) );
+
+            if ( '' !== $equals && $text !== $equals ) {
+                continue;
+            }
+
+            if ( '' !== $contains && false === strpos( $text, $contains ) ) {
+                continue;
+            }
+
+            $filtered[] = $item;
+        }
+
+        return [
+            'items'   => array_values( $filtered ),
+            'total'   => count( $items ),
+            'matched' => count( $filtered ),
+        ];
+    }
+
+    public function ability_pluck_field( $input ): array {
+        $input  = is_array( $input ) ? $input : [];
+        $items  = isset( $input['items'] ) && is_array( $input['items'] ) ? array_values( $input['items'] ) : [];
+        $path   = (string) ( $input['path'] ?? '' );
+        $unique = ! empty( $input['unique'] );
+        $values = [];
+        $seen   = [];
+
+        foreach ( $items as $item ) {
+            $value = $this->get_path_value( $item, $path );
+            if ( $unique && ( is_scalar( $value ) || null === $value ) ) {
+                $key = (string) $value;
+                if ( isset( $seen[ $key ] ) ) {
+                    continue;
+                }
+                $seen[ $key ] = true;
+            }
+            $values[] = $value;
+        }
+
+        return [
+            'values' => $values,
+            'total'  => count( $values ),
+        ];
+    }
+
+    public function ability_join_text( $input ): array {
+        $input     = is_array( $input ) ? $input : [];
+        $items     = isset( $input['items'] ) && is_array( $input['items'] ) ? array_values( $input['items'] ) : [];
+        $path      = (string) ( $input['path'] ?? '' );
+        $separator = array_key_exists( 'separator', $input ) ? (string) $input['separator'] : "\n";
+        $prefix    = (string) ( $input['prefix'] ?? '' );
+        $suffix    = (string) ( $input['suffix'] ?? '' );
+        $parts     = [];
+
+        foreach ( $items as $item ) {
+            $value = '' === $path ? $item : $this->get_path_value( $item, $path );
+            $text  = $this->stringify_glue_value( $value );
+            if ( '' === $text ) {
+                continue;
+            }
+            $parts[] = $prefix . $text . $suffix;
+        }
+
+        return [
+            'text'  => implode( $separator, $parts ),
+            'total' => count( $parts ),
+        ];
+    }
+
     public function register_ai_assistant_ability_domains( array $domains ): array {
         $domains['pipes'] = 'pipes, workflows, flows, yahoo pipes, connect abilities, ability pipeline, automation';
         return $domains;
+    }
+
+    private function register_pipe_ability( string $ability_id, array $args ): void {
+        if ( function_exists( 'wp_has_ability' ) && wp_has_ability( $ability_id ) ) {
+            return;
+        }
+
+        $args['category'] = $args['category'] ?? 'pipes';
+        $args['permission_callback'] = $args['permission_callback'] ?? function() {
+            return current_user_can( 'read' );
+        };
+
+        wp_register_ability( $ability_id, $args );
+    }
+
+    private function ability_meta( bool $readonly, bool $destructive, bool $idempotent, string $instructions ): array {
+        return [
+            'show_in_rest' => true,
+            'annotations'  => [
+                'readonly'     => $readonly,
+                'destructive'  => $destructive,
+                'idempotent'   => $idempotent,
+                'instructions' => $instructions,
+            ],
+        ];
+    }
+
+    private function items_output_schema(): array {
+        return [
+            'type'       => 'object',
+            'properties' => [
+                'items' => [
+                    'type'  => 'array',
+                    'items' => [ 'type' => [ 'object', 'array', 'string', 'number', 'integer', 'boolean', 'null' ] ],
+                ],
+                'total' => [
+                    'type' => 'integer',
+                ],
+            ],
+        ];
     }
 
     private function get_pipe_post( int $post_id ) {
@@ -379,7 +721,7 @@ class App extends BaseApp {
     private function format_pipe( \WP_Post $post, bool $include_graph = false ): array {
         $pipe = [
             'id'       => $post->ID,
-            'title'    => get_the_title( $post ),
+            'title'    => $post->post_title,
             'modified' => get_post_modified_time( 'c', false, $post ),
         ];
 
@@ -598,6 +940,23 @@ class App extends BaseApp {
         return $value;
     }
 
+    private function stringify_glue_value( $value ): string {
+        if ( null === $value ) {
+            return '';
+        }
+
+        if ( is_bool( $value ) ) {
+            return $value ? 'true' : 'false';
+        }
+
+        if ( is_scalar( $value ) ) {
+            return (string) $value;
+        }
+
+        $json = wp_json_encode( $value );
+        return is_string( $json ) ? $json : '';
+    }
+
     private function normalize_result( $result ) {
         if ( $result instanceof \JsonSerializable ) {
             return $result->jsonSerialize();
@@ -690,13 +1049,38 @@ class App extends BaseApp {
         return [];
     }
 
+    private function get_starter_pipe( string $starter_id ): ?array {
+        $starter_id = sanitize_key( $starter_id );
+        foreach ( $this->get_starter_pipes() as $starter ) {
+            if ( $starter_id === $starter['id'] ) {
+                return $starter;
+            }
+        }
+
+        return null;
+    }
+
+    private function find_user_starter_pipe_id( string $starter_id ): int {
+        $posts = get_posts( [
+            'post_type'      => self::POST_TYPE,
+            'post_status'    => [ 'publish', 'draft', 'private' ],
+            'posts_per_page' => 1,
+            'author'         => get_current_user_id(),
+            'fields'         => 'ids',
+            'meta_key'       => self::STARTER_META_KEY,
+            'meta_value'     => sanitize_key( $starter_id ),
+        ] );
+
+        return $posts ? (int) $posts[0] : 0;
+    }
+
     private function get_starter_pipes(): array {
         return [
             [
                 'id'          => 'wordopedia-research-brief',
                 'title'       => __( 'Wordopedia Research Brief', 'pipes' ),
-                'description' => __( 'Search Wikipedia, fetch the top article, and list media for that article.', 'pipes' ),
-                'requires'    => [ 'wordopedia/search-wikipedia', 'wordopedia/get-article', 'wordopedia/list-article-media' ],
+                'description' => __( 'Search Wikipedia, limit results, fetch the top article, and list media for that article.', 'pipes' ),
+                'requires'    => [ 'wordopedia/search-wikipedia', 'pipes/limit-items', 'wordopedia/get-article', 'wordopedia/list-article-media' ],
                 'graph'       => [
                     'nodes' => [
                         [
@@ -712,15 +1096,27 @@ class App extends BaseApp {
                             'position'   => [ 'x' => 28, 'y' => 64 ],
                         ],
                         [
+                            'id'         => 'top-results',
+                            'ability_id' => 'pipes/limit-items',
+                            'label'      => __( 'Keep top result', 'pipes' ),
+                            'args'       => [
+                                'limit' => 1,
+                            ],
+                            'bindings'   => [
+                                [ 'target' => 'items', 'source' => 'search', 'path' => 'articles' ],
+                            ],
+                            'position'   => [ 'x' => 328, 'y' => 64 ],
+                        ],
+                        [
                             'id'         => 'article',
                             'ability_id' => 'wordopedia/get-article',
                             'label'      => __( 'Fetch top article', 'pipes' ),
                             'args'       => [],
                             'bindings'   => [
-                                [ 'target' => 'page_id', 'source' => 'search', 'path' => 'articles.0.page_id' ],
+                                [ 'target' => 'page_id', 'source' => 'top-results', 'path' => 'items.0.page_id' ],
                                 [ 'target' => 'language', 'source' => 'search', 'path' => 'language' ],
                             ],
-                            'position'   => [ 'x' => 328, 'y' => 46 ],
+                            'position'   => [ 'x' => 628, 'y' => 46 ],
                         ],
                         [
                             'id'         => 'media',
@@ -730,15 +1126,16 @@ class App extends BaseApp {
                                 'mime' => 'image/svg+xml',
                             ],
                             'bindings'   => [
-                                [ 'target' => 'page_id', 'source' => 'search', 'path' => 'articles.0.page_id' ],
+                                [ 'target' => 'page_id', 'source' => 'top-results', 'path' => 'items.0.page_id' ],
                                 [ 'target' => 'language', 'source' => 'search', 'path' => 'language' ],
                             ],
-                            'position'   => [ 'x' => 628, 'y' => 84 ],
+                            'position'   => [ 'x' => 928, 'y' => 84 ],
                         ],
                     ],
                     'edges' => [
-                        [ 'from' => 'search', 'to' => 'article' ],
-                        [ 'from' => 'search', 'to' => 'media' ],
+                        [ 'from' => 'search', 'to' => 'top-results' ],
+                        [ 'from' => 'top-results', 'to' => 'article' ],
+                        [ 'from' => 'top-results', 'to' => 'media' ],
                     ],
                 ],
             ],

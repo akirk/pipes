@@ -279,6 +279,10 @@
             border-color: var(--pipes-accent);
             background: color-mix(in srgb, var(--pipes-accent) 10%, var(--pipes-surface));
         }
+        .output-port.bound {
+            border-color: var(--pipes-link);
+            background: color-mix(in srgb, var(--pipes-link) 10%, var(--pipes-surface));
+        }
         .port.active {
             box-shadow: 0 0 0 2px color-mix(in srgb, var(--pipes-accent) 20%, transparent);
         }
@@ -1047,6 +1051,9 @@
                     output.dataset.portKind = 'output';
                     output.dataset.nodeId = node.id;
                     output.dataset.portPath = port.path;
+                    if (state.graph.nodes.some((targetNode) => (targetNode.bindings || []).some((binding) => binding.source === node.id && (binding.path || '') === port.path))) {
+                        output.classList.add('bound');
+                    }
                     output.title = port.value ? `${port.label}: ${port.value}` : port.label;
                     output.textContent = port.label;
                     output.addEventListener('click', (event) => {
@@ -1078,15 +1085,12 @@
             const maxY = Math.max(720, ...state.graph.nodes.map((node) => (node.position?.y || 0) + 260));
             svg.setAttribute('width', String(maxX));
             svg.setAttribute('height', String(maxY));
+            const bindings = graphBindings();
             let rendered = 0;
-            for (const node of state.graph.nodes) {
-                for (const binding of node.bindings || []) {
-                    if (!binding.source || binding.source === node.id) {
-                        continue;
-                    }
-                    rendered += renderBindingEdge(svg, binding.source, binding.path || '', node.id, binding.target || '');
-                }
-            }
+            bindings.forEach((binding, index) => {
+                binding.index = index;
+                rendered += renderBindingEdge(svg, binding, index, bindings);
+            });
             if (rendered) {
                 return;
             }
@@ -1095,13 +1099,41 @@
             }
         };
 
-        const renderBindingEdge = (svg, sourceId, sourcePath, targetId, targetName) => {
-            const sourcePort = findOutputPort(sourceId, sourcePath);
-            const targetPort = findInputPort(targetId, targetName);
-            if (!sourcePort || !targetPort) {
-                return renderNodeEdge(svg, sourceId, targetId, true);
+        const graphBindings = () => {
+            const bindings = [];
+            for (const node of state.graph.nodes) {
+                for (const binding of node.bindings || []) {
+                    if (!binding.source || binding.source === node.id) {
+                        continue;
+                    }
+                    bindings.push({
+                        source: binding.source,
+                        path: binding.path || '',
+                        targetNode: node.id,
+                        target: binding.target || ''
+                    });
+                }
             }
-            drawEdge(svg, portPoint(sourcePort, 'output'), portPoint(targetPort, 'input'), true);
+            return bindings;
+        };
+
+        const renderBindingEdge = (svg, binding, index, allBindings) => {
+            const sourcePort = findOutputPort(binding.source, binding.path);
+            const targetPort = findInputPort(binding.targetNode, binding.target);
+            if (!sourcePort || !targetPort) {
+                return renderNodeEdge(svg, binding.source, binding.targetNode, true);
+            }
+            const siblings = allBindings.filter((candidate) => candidate.source === binding.source && candidate.targetNode === binding.targetNode);
+            const siblingIndex = siblings.findIndex((candidate) => candidate.index === binding.index);
+            const siblingOffset = (siblingIndex - (siblings.length - 1) / 2) * 18;
+            drawEdge(
+                svg,
+                portPoint(sourcePort, 'output'),
+                portPoint(targetPort, 'input'),
+                true,
+                wireColor(index),
+                siblingOffset
+            );
             return 1;
         };
 
@@ -1115,7 +1147,9 @@
                 svg,
                 { x: from.position.x + 288, y: from.position.y + 64 },
                 { x: to.position.x, y: to.position.y + 64 },
-                !soft
+                !soft,
+                '',
+                0
             );
             return 1;
         };
@@ -1139,13 +1173,20 @@
             };
         };
 
-        const drawEdge = (svg, from, to, strong) => {
+        const wireColor = (index) => {
+            const colors = ['#147d64', '#2368cc', '#b54708', '#7a5af8', '#c11574', '#088ab2'];
+            return colors[index % colors.length];
+        };
+
+        const drawEdge = (svg, from, to, strong, color = '', offset = 0) => {
             const mid = Math.max(44, Math.abs(to.x - from.x) / 2);
+            const fromY = from.y + offset;
+            const toY = to.y + offset;
             const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            path.setAttribute('d', `M ${from.x} ${from.y} C ${from.x + mid} ${from.y}, ${to.x - mid} ${to.y}, ${to.x} ${to.y}`);
+            path.setAttribute('d', `M ${from.x} ${from.y} C ${from.x + mid} ${fromY}, ${to.x - mid} ${toY}, ${to.x} ${to.y}`);
             path.setAttribute('fill', 'none');
-            path.setAttribute('stroke', strong ? 'var(--pipes-accent)' : 'color-mix(in srgb, var(--pipes-muted) 55%, transparent)');
-            path.setAttribute('stroke-width', strong ? '2.5' : '1.5');
+            path.setAttribute('stroke', strong ? (color || 'var(--pipes-accent)') : 'color-mix(in srgb, var(--pipes-muted) 55%, transparent)');
+            path.setAttribute('stroke-width', strong ? '3' : '1.5');
             path.setAttribute('stroke-linecap', 'round');
             path.setAttribute('stroke-linejoin', 'round');
             if (!strong) {
@@ -1153,18 +1194,18 @@
             }
             svg.append(path);
             if (strong) {
-                drawEndpoint(svg, from);
-                drawEndpoint(svg, to);
+                drawEndpoint(svg, from, color);
+                drawEndpoint(svg, to, color);
             }
         };
 
-        const drawEndpoint = (svg, point) => {
+        const drawEndpoint = (svg, point, color = '') => {
             const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
             circle.setAttribute('cx', String(point.x));
             circle.setAttribute('cy', String(point.y));
             circle.setAttribute('r', '4.5');
             circle.setAttribute('fill', 'var(--pipes-surface)');
-            circle.setAttribute('stroke', 'var(--pipes-accent)');
+            circle.setAttribute('stroke', color || 'var(--pipes-accent)');
             circle.setAttribute('stroke-width', '2.5');
             svg.append(circle);
         };

@@ -969,6 +969,46 @@
             return paths;
         };
 
+        const pathValue = (value, path) => {
+            const parts = String(path || '').trim().split('.').filter(Boolean);
+            let cursor = value;
+            for (const part of parts) {
+                if (cursor === null || cursor === undefined) {
+                    return undefined;
+                }
+                if (Array.isArray(cursor)) {
+                    const index = Number.parseInt(part, 10);
+                    cursor = Number.isNaN(index) ? undefined : cursor[index];
+                } else if (typeof cursor === 'object') {
+                    cursor = cursor[part];
+                } else {
+                    return undefined;
+                }
+            }
+            return cursor;
+        };
+
+        const itemPathSuggestionsFor = (node) => {
+            const itemsBinding = (node.bindings || []).find((binding) => binding.target === 'items');
+            const sourceResult = itemsBinding ? state.lastRunResults[itemsBinding.source]?.result : undefined;
+            const items = sourceResult === undefined ? undefined : pathValue(sourceResult, itemsBinding.path || '');
+            if (!Array.isArray(items)) {
+                return [];
+            }
+            const seen = new Set();
+            const suggestions = [];
+            for (const item of items.slice(0, 5)) {
+                for (const entry of flattenPaths(item).filter((candidate) => candidate.path)) {
+                    if (seen.has(entry.path)) {
+                        continue;
+                    }
+                    seen.add(entry.path);
+                    suggestions.push(entry.path);
+                }
+            }
+            return suggestions.slice(0, 30);
+        };
+
         const formatPathValue = (value) => {
             if (value === null) {
                 return 'null';
@@ -2033,6 +2073,37 @@
                     row.append(pathSelect);
                     container.append(row);
                     continue;
+                }
+
+                if (prop.name === 'path') {
+                    const suggestions = itemPathSuggestionsFor(node);
+                    if (suggestions.length) {
+                        const listId = `path-suggestions-${node.id}-${prop.name}`;
+                        const pathInput = document.createElement('input');
+                        pathInput.type = 'text';
+                        pathInput.setAttribute('list', listId);
+                        pathInput.value = formatArgValue(node.args[prop.name]);
+                        const datalist = document.createElement('datalist');
+                        datalist.id = listId;
+                        for (const suggestion of suggestions) {
+                            const option = document.createElement('option');
+                            option.value = suggestion;
+                            datalist.append(option);
+                        }
+                        pathInput.addEventListener('input', (event) => {
+                            node.args[prop.name] = event.target.value;
+                            markDirty();
+                        });
+                        row.append(pathInput, datalist);
+                        container.append(row);
+                        continue;
+                    }
+                    if ((node.bindings || []).some((candidate) => candidate.target === 'items')) {
+                        const notice = document.createElement('div');
+                        notice.className = 'notice';
+                        notice.textContent = 'Run the pipe to inspect item fields.';
+                        row.append(notice);
+                    }
                 }
 
                 const value = node.args[prop.name];

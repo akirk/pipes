@@ -308,6 +308,39 @@
             padding: 0.65rem;
             white-space: pre-wrap;
         }
+        .rendered-output {
+            background: var(--pipes-surface);
+            border: 1px solid var(--pipes-border);
+            border-radius: var(--pipes-radius);
+            overflow: auto;
+            padding: 0.65rem;
+        }
+        .rendered-output p {
+            margin: 0;
+        }
+        .rendered-output ul {
+            margin: 0;
+            padding-left: 1.2rem;
+        }
+        .rendered-output table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+        .rendered-output th,
+        .rendered-output td {
+            border-bottom: 1px solid var(--pipes-border);
+            padding: 0.35rem 0.4rem;
+            text-align: left;
+            vertical-align: top;
+        }
+        .rendered-output tbody tr:last-child th,
+        .rendered-output tbody tr:last-child td {
+            border-bottom: 0;
+        }
+        .rendered-output th {
+            color: var(--pipes-muted);
+            font-weight: 600;
+        }
         .flow-add {
             border: 1px dashed var(--pipes-border);
             border-radius: var(--pipes-radius);
@@ -1105,6 +1138,90 @@
         };
 
         const isOutputNode = (node) => String(node.ability_id || '').startsWith('pipes/output-');
+        const isDashboardOutputNode = (node) => [
+            'pipes/output-dashboard-text',
+            'pipes/output-dashboard-list'
+        ].includes(String(node.ability_id || ''));
+
+        const stringifyGlueValue = (value) => {
+            if (value === null || value === undefined) {
+                return '';
+            }
+            if (typeof value === 'object') {
+                return JSON.stringify(value);
+            }
+            return String(value);
+        };
+
+        const appendTextElement = (parent, tagName, text) => {
+            const element = document.createElement(tagName);
+            element.textContent = text;
+            parent.append(element);
+            return element;
+        };
+
+        const isListArray = (value) => Array.isArray(value) && Object.keys(value).every((key) => String(Number(key)) === key);
+
+        const renderValueHtml = (value, container) => {
+            container.innerHTML = '';
+            if (value === null || value === undefined) {
+                const paragraph = document.createElement('p');
+                appendTextElement(paragraph, 'em', 'No output.');
+                container.append(paragraph);
+                return;
+            }
+            if (typeof value !== 'object') {
+                appendTextElement(container, 'p', String(value));
+                return;
+            }
+            if (isListArray(value)) {
+                if (!value.length) {
+                    const paragraph = document.createElement('p');
+                    appendTextElement(paragraph, 'em', 'No items.');
+                    container.append(paragraph);
+                    return;
+                }
+                const first = value[0];
+                if (first && typeof first === 'object' && !Array.isArray(first)) {
+                    const columns = Object.keys(first).slice(0, 6);
+                    const table = document.createElement('table');
+                    const thead = document.createElement('thead');
+                    const headRow = document.createElement('tr');
+                    for (const column of columns) {
+                        appendTextElement(headRow, 'th', column);
+                    }
+                    thead.append(headRow);
+                    table.append(thead);
+                    const tbody = document.createElement('tbody');
+                    for (const row of value.slice(0, 10)) {
+                        const tableRow = document.createElement('tr');
+                        for (const column of columns) {
+                            appendTextElement(tableRow, 'td', stringifyGlueValue(row?.[column]));
+                        }
+                        tbody.append(tableRow);
+                    }
+                    table.append(tbody);
+                    container.append(table);
+                    return;
+                }
+                const list = document.createElement('ul');
+                for (const item of value.slice(0, 10)) {
+                    appendTextElement(list, 'li', stringifyGlueValue(item));
+                }
+                container.append(list);
+                return;
+            }
+            const table = document.createElement('table');
+            const tbody = document.createElement('tbody');
+            for (const [key, item] of Object.entries(value).slice(0, 12)) {
+                const row = document.createElement('tr');
+                appendTextElement(row, 'th', key);
+                appendTextElement(row, 'td', stringifyGlueValue(item));
+                tbody.append(row);
+            }
+            table.append(tbody);
+            container.append(table);
+        };
 
         const compactPreview = (value) => {
             if (value === null) {
@@ -1689,6 +1806,7 @@
                     <div class="output-preview" data-output-preview hidden>
                         <strong data-output-preview-title>Output preview</strong>
                         <pre></pre>
+                        <div class="rendered-output" data-rendered-preview hidden></div>
                     </div>
                 `;
                 $('.flow-step-number', step).textContent = String(index + 1);
@@ -1807,12 +1925,19 @@
             if (!container) {
                 return;
             }
+            const pre = $('pre', container);
+            const rendered = $('[data-rendered-preview]', container);
+            if (rendered) {
+                rendered.hidden = true;
+                rendered.innerHTML = '';
+            }
+            pre.hidden = false;
             const run = state.lastRunResults[node.id];
             if (!run) {
                 if (isOutputNode(node)) {
                     container.hidden = false;
                     $('[data-output-preview-title]', container).textContent = 'Output preview';
-                    $('pre', container).textContent = 'Run the pipe to preview this output node.';
+                    pre.textContent = 'Run the pipe to preview this output node.';
                 } else {
                     container.hidden = true;
                 }
@@ -1826,11 +1951,22 @@
                     undefined;
                 const inputValue = run.input && Object.prototype.hasOwnProperty.call(run.input, 'value') ? run.input.value : undefined;
                 $('[data-output-preview-title]', container).textContent = 'Output preview';
-                $('pre', container).textContent = `Input value:\n${compactPreview(inputValue)}\n\nRendered value:\n${compactPreview(value)}`;
+                if (isDashboardOutputNode(node) && rendered) {
+                    pre.hidden = true;
+                    rendered.hidden = false;
+                    if (node.ability_id === 'pipes/output-dashboard-text') {
+                        rendered.innerHTML = '';
+                        appendTextElement(rendered, 'p', stringifyGlueValue(value));
+                    } else {
+                        renderValueHtml(value, rendered);
+                    }
+                    return;
+                }
+                pre.textContent = `Input value:\n${compactPreview(inputValue)}\n\nRendered value:\n${compactPreview(value)}`;
                 return;
             }
             $('[data-output-preview-title]', container).textContent = 'Node output';
-            $('pre', container).textContent = compactPreview(run.result);
+            pre.textContent = compactPreview(run.result);
         };
 
         const moveNode = (index, direction) => {
@@ -2034,6 +2170,7 @@
                 <div class="output-preview" data-inspector-output-preview hidden>
                     <strong data-output-preview-title>Output preview</strong>
                     <pre></pre>
+                    <div class="rendered-output" data-rendered-preview hidden></div>
                 </div>
                 <button class="danger" data-action="remove-node">Remove Node</button>
             `;

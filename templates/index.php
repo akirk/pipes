@@ -265,19 +265,6 @@
             flex: 0 0 auto;
             padding: 0.35rem 0.5rem;
         }
-        .binding-summary {
-            display: grid;
-            gap: 0.35rem;
-            margin-top: 0.7rem;
-        }
-        .list-bindings {
-            display: grid;
-            gap: 0.6rem;
-            margin-top: 0.75rem;
-        }
-        .list-bindings > button {
-            justify-self: start;
-        }
         .list-args {
             border-top: 1px solid var(--pipes-border);
             display: grid;
@@ -293,12 +280,6 @@
             color: var(--pipes-muted);
             font-size: 0.78rem;
             font-weight: 600;
-        }
-        .list-arg-bound {
-            border: 1px solid var(--pipes-border);
-            border-radius: var(--pipes-radius);
-            color: var(--pipes-muted);
-            padding: 0.55rem 0.65rem;
         }
         .list-arg textarea {
             min-height: 4rem;
@@ -1397,11 +1378,6 @@
                         <button class="danger" data-step-action="remove">Remove</button>
                     </div>
                     <div class="list-args" data-list-args></div>
-                    <div class="binding-summary"></div>
-                    <div class="list-bindings">
-                        <div data-list-bindings></div>
-                        <button data-step-action="add-binding">Add Binding</button>
-                    </div>
                 `;
                 $('.flow-step-number', step).textContent = String(index + 1);
                 $('[data-step-label]', step).value = node.label || ability?.label || node.ability_id;
@@ -1412,25 +1388,12 @@
                     badges.append(badge(ability.category));
                 }
                 if ((node.bindings || []).length) {
-                    badges.append(badge(`${node.bindings.length} bindings`));
+                    badges.append(badge(`${node.bindings.length} ${node.bindings.length === 1 ? 'binding' : 'bindings'}`));
                 }
                 if (state.lastRunResults[node.id]) {
                     badges.append(badge('has output'));
                 }
-                const summary = $('.binding-summary', step);
-                if ((node.bindings || []).length) {
-                    for (const binding of node.bindings) {
-                        const source = nodeById(binding.source);
-                        const line = document.createElement('div');
-                        line.className = 'meta';
-                        line.textContent = `${source?.label || binding.source}.${binding.path || 'result'} -> ${binding.target}`;
-                        summary.append(line);
-                    }
-                } else {
-                    summary.innerHTML = '<div class="notice">No input bindings.</div>';
-                }
                 renderListArgs(node, props, $('[data-list-args]', step));
-                renderBindings(node, props, $('[data-list-bindings]', step));
                 $('[data-step-label]', step).addEventListener('input', (event) => {
                     state.selectedNodeId = node.id;
                     node.label = event.target.value;
@@ -1459,11 +1422,6 @@
                         moveNode(index, -1);
                     } else if (action === 'down') {
                         moveNode(index, 1);
-                    } else if (action === 'add-binding') {
-                        state.selectedNodeId = node.id;
-                        node.bindings = node.bindings || [];
-                        node.bindings.push(defaultBindingForNode(node, props));
-                        markDirty();
                     } else if (action === 'remove') {
                         removeNode(node.id);
                     }
@@ -1784,17 +1742,70 @@
             node.args = node.args || {};
             for (const prop of props) {
                 const binding = (node.bindings || []).find((candidate) => candidate.target === prop.name);
+                const sourceNodes = state.graph.nodes.filter((candidate) => candidate.id !== node.id);
                 const row = document.createElement('div');
                 row.className = 'list-arg';
                 row.innerHTML = '<label></label>';
                 $('label', row).textContent = `${prop.name}${prop.required ? ' *' : ''}`;
 
+                const bindSelect = document.createElement('select');
+                const manualOption = document.createElement('option');
+                manualOption.value = '';
+                manualOption.textContent = 'Manual value';
+                bindSelect.append(manualOption);
+                for (const source of sourceNodes) {
+                    const option = document.createElement('option');
+                    option.value = source.id;
+                    option.textContent = source.label || source.ability_id;
+                    bindSelect.append(option);
+                }
+                bindSelect.value = binding?.source || '';
+                bindSelect.addEventListener('change', (event) => {
+                    node.bindings = node.bindings || [];
+                    const existing = node.bindings.find((candidate) => candidate.target === prop.name);
+                    if (!event.target.value) {
+                        node.bindings = node.bindings.filter((candidate) => candidate.target !== prop.name);
+                        syncEdgesFromBindings();
+                        markDirty();
+                        render();
+                        return;
+                    }
+
+                    const sourcePorts = outputPortsForNode(nodeById(event.target.value) || {});
+                    const nextBinding = existing || { target: prop.name, source: event.target.value, path: sourcePorts[0]?.path || '' };
+                    nextBinding.source = event.target.value;
+                    nextBinding.path = sourcePorts.some((port) => port.path === nextBinding.path) ? nextBinding.path : (sourcePorts[0]?.path || '');
+                    if (!existing) {
+                        node.bindings.push(nextBinding);
+                    }
+                    delete node.args[prop.name];
+                    syncEdgesFromBindings();
+                    markDirty();
+                    render();
+                });
+                row.append(bindSelect);
+
                 if (binding) {
                     const source = nodeById(binding.source);
-                    const bound = document.createElement('div');
-                    bound.className = 'list-arg-bound';
-                    bound.textContent = `Bound from ${source?.label || binding.source}.${binding.path || 'result'}`;
-                    row.append(bound);
+                    const pathSelect = document.createElement('select');
+                    const ports = source ? outputPortsForNode(source) : [];
+                    if (!ports.some((port) => port.path === (binding.path || ''))) {
+                        ports.unshift({ path: binding.path || '', label: binding.path || 'result', value: 'bound' });
+                    }
+                    for (const port of ports) {
+                        const option = document.createElement('option');
+                        option.value = port.path;
+                        option.textContent = `${port.label}${port.value ? ` (${port.value})` : ''}`;
+                        pathSelect.append(option);
+                    }
+                    pathSelect.value = binding.path || '';
+                    pathSelect.addEventListener('change', (event) => {
+                        binding.path = event.target.value;
+                        syncEdgesFromBindings();
+                        markDirty();
+                        renderGraph();
+                    });
+                    row.append(pathSelect);
                     container.append(row);
                     continue;
                 }

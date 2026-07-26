@@ -189,6 +189,7 @@
             inset: 0;
             pointer-events: none;
             overflow: visible;
+            z-index: 4;
         }
         .node {
             position: absolute;
@@ -199,10 +200,12 @@
             background: var(--pipes-surface);
             box-shadow: 0 10px 25px color-mix(in srgb, #000 9%, transparent);
             padding: 0.85rem;
+            z-index: 2;
         }
         .node.selected {
             border-color: var(--pipes-accent);
             box-shadow: 0 0 0 2px color-mix(in srgb, var(--pipes-accent) 22%, transparent), 0 10px 25px color-mix(in srgb, #000 9%, transparent);
+            z-index: 3;
         }
         .node h2 {
             font-size: 0.95rem;
@@ -246,6 +249,7 @@
             content: "";
             position: absolute;
             top: 50%;
+            z-index: 5;
             width: 0.55rem;
             height: 0.55rem;
             border: 2px solid var(--pipes-accent);
@@ -1128,8 +1132,9 @@
         const portPoint = (element, kind) => {
             const graphRect = $('[data-graph]').getBoundingClientRect();
             const rect = element.getBoundingClientRect();
+            const dotOffset = 13;
             return {
-                x: (kind === 'output' ? rect.right : rect.left) - graphRect.left,
+                x: (kind === 'output' ? rect.right + dotOffset : rect.left - dotOffset) - graphRect.left,
                 y: rect.top + rect.height / 2 - graphRect.top
             };
         };
@@ -1141,7 +1146,27 @@
             path.setAttribute('fill', 'none');
             path.setAttribute('stroke', strong ? 'var(--pipes-accent)' : 'color-mix(in srgb, var(--pipes-muted) 55%, transparent)');
             path.setAttribute('stroke-width', strong ? '2.5' : '1.5');
+            path.setAttribute('stroke-linecap', 'round');
+            path.setAttribute('stroke-linejoin', 'round');
+            if (!strong) {
+                path.setAttribute('stroke-dasharray', '5 7');
+            }
             svg.append(path);
+            if (strong) {
+                drawEndpoint(svg, from);
+                drawEndpoint(svg, to);
+            }
+        };
+
+        const drawEndpoint = (svg, point) => {
+            const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            circle.setAttribute('cx', String(point.x));
+            circle.setAttribute('cy', String(point.y));
+            circle.setAttribute('r', '4.5');
+            circle.setAttribute('fill', 'var(--pipes-surface)');
+            circle.setAttribute('stroke', 'var(--pipes-accent)');
+            circle.setAttribute('stroke-width', '2.5');
+            svg.append(circle);
         };
 
         const renderInspector = () => {

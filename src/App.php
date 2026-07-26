@@ -296,12 +296,17 @@ class App extends BaseApp {
                     ],
                     'search'         => [
                         'type'        => 'string',
-                        'description' => __( 'Text to search for in the field value.', 'pipes' ),
+                        'description' => __( 'Text or regex pattern to search for in the field value.', 'pipes' ),
                     ],
                     'replace'        => [
                         'type'        => 'string',
                         'description' => __( 'Replacement text. Leave empty to remove the search text.', 'pipes' ),
                         'default'     => '',
+                    ],
+                    'regex'          => [
+                        'type'        => 'boolean',
+                        'description' => __( 'Treat search as a regular expression pattern.', 'pipes' ),
+                        'default'     => false,
                     ],
                     'case_sensitive' => [
                         'type'        => 'boolean',
@@ -712,12 +717,13 @@ class App extends BaseApp {
         ];
     }
 
-    public function ability_search_replace_items( $input ): array {
+    public function ability_search_replace_items( $input ) {
         $input          = is_array( $input ) ? $input : [];
         $items          = isset( $input['items'] ) && is_array( $input['items'] ) ? array_values( $input['items'] ) : [];
         $path           = (string) ( $input['path'] ?? '' );
         $search         = (string) ( $input['search'] ?? '' );
         $replace        = (string) ( $input['replace'] ?? '' );
+        $regex          = ! empty( $input['regex'] );
         $case_sensitive = array_key_exists( 'case_sensitive', $input ) ? (bool) $input['case_sensitive'] : true;
         $changed        = 0;
 
@@ -729,6 +735,19 @@ class App extends BaseApp {
             ];
         }
 
+        $pattern = '';
+        if ( $regex ) {
+            $pattern = $this->build_regex_pattern( $search, $case_sensitive );
+            set_error_handler( static function(): bool {
+                return true;
+            } );
+            $valid = false !== preg_match( $pattern, '' );
+            restore_error_handler();
+            if ( ! $valid ) {
+                return new \WP_Error( 'pipes_invalid_regex', __( 'Search is not a valid regular expression.', 'pipes' ) );
+            }
+        }
+
         foreach ( $items as &$item ) {
             $value = $this->get_path_value( $item, $path );
             if ( null === $value || is_array( $value ) || is_object( $value ) ) {
@@ -736,7 +755,14 @@ class App extends BaseApp {
             }
 
             $text = $this->stringify_glue_value( $value );
-            $next = $case_sensitive ? str_replace( $search, $replace, $text, $count ) : str_ireplace( $search, $replace, $text, $count );
+            if ( $regex ) {
+                $next = preg_replace( $pattern, $replace, $text, -1, $count );
+                if ( null === $next ) {
+                    continue;
+                }
+            } else {
+                $next = $case_sensitive ? str_replace( $search, $replace, $text, $count ) : str_ireplace( $search, $replace, $text, $count );
+            }
             if ( 0 === $count ) {
                 continue;
             }
@@ -1697,6 +1723,10 @@ class App extends BaseApp {
 
         $json = wp_json_encode( $value );
         return is_string( $json ) ? $json : '';
+    }
+
+    private function build_regex_pattern( string $pattern, bool $case_sensitive ): string {
+        return '~' . str_replace( '~', '\\~', $pattern ) . '~u' . ( $case_sensitive ? '' : 'i' );
     }
 
     private function normalize_result( $result ) {

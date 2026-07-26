@@ -1,0 +1,935 @@
+<!DOCTYPE html>
+<html <?php wp_app_language_attributes(); ?>>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><?php wp_app_title(); ?></title>
+    <?php wp_app_head(); ?>
+    <style>
+        :root {
+            color-scheme: light dark;
+            --pipes-bg: var(--wp-app-color-background, #f6f7f8);
+            --pipes-surface: var(--wp-app-color-surface, #fff);
+            --pipes-surface-alt: var(--wp-app-color-surface-alt, #eef1f4);
+            --pipes-text: var(--wp-app-color-text, #1f2328);
+            --pipes-muted: var(--wp-app-color-muted, #667085);
+            --pipes-border: color-mix(in srgb, var(--pipes-muted) 24%, transparent);
+            --pipes-link: var(--wp-app-color-link, #2368cc);
+            --pipes-accent: #147d64;
+            --pipes-danger: #b42318;
+            --pipes-radius: 6px;
+        }
+
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: var(--pipes-bg);
+            color: var(--pipes-text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+        }
+        button, input, textarea, select {
+            font: inherit;
+            color: inherit;
+        }
+        button {
+            border: 1px solid var(--pipes-border);
+            background: var(--pipes-surface);
+            border-radius: var(--pipes-radius);
+            padding: 0.55rem 0.75rem;
+            cursor: pointer;
+        }
+        button:hover { border-color: var(--pipes-link); }
+        button.primary {
+            background: var(--pipes-accent);
+            border-color: var(--pipes-accent);
+            color: #fff;
+        }
+        button.danger {
+            border-color: color-mix(in srgb, var(--pipes-danger) 42%, var(--pipes-border));
+            color: var(--pipes-danger);
+        }
+        input, textarea, select {
+            width: 100%;
+            border: 1px solid var(--pipes-border);
+            border-radius: var(--pipes-radius);
+            background: var(--pipes-surface);
+            padding: 0.55rem 0.65rem;
+        }
+        input[type="checkbox"] {
+            width: auto;
+            padding: 0;
+        }
+        textarea {
+            min-height: 8rem;
+            resize: vertical;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+            font-size: 0.86rem;
+            line-height: 1.45;
+        }
+        .app {
+            display: grid;
+            grid-template-columns: 18rem minmax(24rem, 1fr) 24rem;
+            min-height: 100vh;
+        }
+        .sidebar, .inspector {
+            border-color: var(--pipes-border);
+            background: var(--pipes-surface);
+            min-width: 0;
+        }
+        .sidebar {
+            border-right: 1px solid var(--pipes-border);
+            padding: 1rem;
+            overflow: auto;
+        }
+        .inspector {
+            border-left: 1px solid var(--pipes-border);
+            padding: 1rem;
+            overflow: auto;
+        }
+        .workspace {
+            min-width: 0;
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+        }
+        .topbar {
+            display: grid;
+            grid-template-columns: minmax(12rem, 1fr) auto;
+            gap: 0.75rem;
+            align-items: center;
+            border-bottom: 1px solid var(--pipes-border);
+            background: var(--pipes-surface);
+            padding: 0.9rem 1rem;
+        }
+        .title-row {
+            display: grid;
+            grid-template-columns: minmax(8rem, 24rem) auto;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        .actions {
+            display: flex;
+            gap: 0.5rem;
+            justify-content: flex-end;
+            flex-wrap: wrap;
+        }
+        .brand {
+            font-size: 1.35rem;
+            font-weight: 700;
+            margin: 0 0 0.9rem;
+        }
+        .section-title {
+            margin: 1.2rem 0 0.55rem;
+            font-size: 0.78rem;
+            color: var(--pipes-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+        .search {
+            margin-bottom: 0.75rem;
+        }
+        .list {
+            display: grid;
+            gap: 0.45rem;
+        }
+        .list-item {
+            display: grid;
+            gap: 0.25rem;
+            width: 100%;
+            text-align: left;
+            padding: 0.65rem;
+        }
+        .list-item.active {
+            border-color: var(--pipes-accent);
+            box-shadow: inset 3px 0 0 var(--pipes-accent);
+        }
+        .list-item strong {
+            font-size: 0.9rem;
+        }
+        .meta {
+            color: var(--pipes-muted);
+            font-size: 0.78rem;
+            overflow-wrap: anywhere;
+        }
+        .badge-row {
+            display: flex;
+            gap: 0.35rem;
+            flex-wrap: wrap;
+        }
+        .badge {
+            border: 1px solid var(--pipes-border);
+            border-radius: 999px;
+            color: var(--pipes-muted);
+            font-size: 0.72rem;
+            line-height: 1;
+            padding: 0.28rem 0.45rem;
+        }
+        .badge.warn {
+            border-color: color-mix(in srgb, var(--pipes-danger) 44%, var(--pipes-border));
+            color: var(--pipes-danger);
+        }
+        .canvas {
+            position: relative;
+            overflow: auto;
+            min-height: 28rem;
+            padding: 1.25rem;
+            background-image:
+                linear-gradient(var(--pipes-border) 1px, transparent 1px),
+                linear-gradient(90deg, var(--pipes-border) 1px, transparent 1px);
+            background-size: 36px 36px;
+            background-color: color-mix(in srgb, var(--pipes-bg) 88%, var(--pipes-surface));
+        }
+        .graph {
+            position: relative;
+            min-width: 46rem;
+            min-height: 34rem;
+        }
+        .edges {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            overflow: visible;
+        }
+        .node {
+            position: absolute;
+            width: 16rem;
+            min-height: 8rem;
+            border: 1px solid var(--pipes-border);
+            border-radius: var(--pipes-radius);
+            background: var(--pipes-surface);
+            box-shadow: 0 10px 25px color-mix(in srgb, #000 9%, transparent);
+            padding: 0.85rem;
+        }
+        .node.selected {
+            border-color: var(--pipes-accent);
+            box-shadow: 0 0 0 2px color-mix(in srgb, var(--pipes-accent) 22%, transparent), 0 10px 25px color-mix(in srgb, #000 9%, transparent);
+        }
+        .node h2 {
+            font-size: 0.95rem;
+            margin: 0 0 0.35rem;
+        }
+        .node .node-id {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+            color: var(--pipes-muted);
+            font-size: 0.76rem;
+        }
+        .node-footer {
+            display: flex;
+            gap: 0.4rem;
+            margin-top: 0.75rem;
+        }
+        .node-footer button {
+            flex: 1;
+            padding: 0.4rem 0.5rem;
+            font-size: 0.78rem;
+        }
+        .empty {
+            border: 1px dashed var(--pipes-border);
+            border-radius: var(--pipes-radius);
+            background: color-mix(in srgb, var(--pipes-surface) 72%, transparent);
+            color: var(--pipes-muted);
+            padding: 1rem;
+        }
+        .output {
+            border-top: 1px solid var(--pipes-border);
+            background: var(--pipes-surface);
+            padding: 1rem;
+        }
+        .output pre {
+            max-height: 18rem;
+            overflow: auto;
+            margin: 0.5rem 0 0;
+            border: 1px solid var(--pipes-border);
+            border-radius: var(--pipes-radius);
+            background: var(--pipes-surface-alt);
+            padding: 0.75rem;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            font-size: 0.82rem;
+        }
+        .field {
+            display: grid;
+            gap: 0.35rem;
+            margin-bottom: 0.8rem;
+        }
+        .field label {
+            color: var(--pipes-muted);
+            font-size: 0.78rem;
+            font-weight: 600;
+        }
+        .schema {
+            border: 1px solid var(--pipes-border);
+            border-radius: var(--pipes-radius);
+            padding: 0.7rem;
+            margin-bottom: 0.8rem;
+        }
+        .schema h3 {
+            margin: 0 0 0.45rem;
+            font-size: 0.88rem;
+        }
+        .schema-row {
+            display: grid;
+            gap: 0.15rem;
+            padding: 0.45rem 0;
+            border-top: 1px solid var(--pipes-border);
+        }
+        .schema-row:first-of-type { border-top: 0; }
+        .binding {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.45rem;
+            border: 1px solid var(--pipes-border);
+            border-radius: var(--pipes-radius);
+            padding: 0.6rem;
+            margin-bottom: 0.55rem;
+        }
+        .binding .wide { grid-column: 1 / -1; }
+        .notice {
+            color: var(--pipes-muted);
+            font-size: 0.86rem;
+        }
+        .error {
+            color: var(--pipes-danger);
+        }
+        @media (max-width: 1100px) {
+            .app {
+                grid-template-columns: 16rem minmax(22rem, 1fr);
+            }
+            .inspector {
+                grid-column: 1 / -1;
+                border-left: 0;
+                border-top: 1px solid var(--pipes-border);
+            }
+        }
+        @media (max-width: 760px) {
+            .app {
+                display: flex;
+                flex-direction: column;
+                min-height: 100vh;
+            }
+            .workspace {
+                order: 1;
+                min-height: 60vh;
+            }
+            .sidebar {
+                order: 2;
+                border-right: 0;
+                border-top: 1px solid var(--pipes-border);
+                border-bottom: 1px solid var(--pipes-border);
+                max-height: 18rem;
+                padding: 0.75rem;
+            }
+            .inspector {
+                order: 3;
+                border-left: 0;
+                border-top: 1px solid var(--pipes-border);
+                padding: 0.75rem;
+            }
+            .topbar, .title-row {
+                grid-template-columns: 1fr;
+                gap: 0.5rem;
+            }
+            .topbar {
+                padding: 0.75rem;
+            }
+            .actions {
+                justify-content: stretch;
+            }
+            .actions button {
+                flex: 1;
+            }
+            .brand {
+                margin-bottom: 0.6rem;
+            }
+            .section-title {
+                margin-top: 0.85rem;
+            }
+            .list {
+                gap: 0.35rem;
+            }
+            .list-item {
+                padding: 0.55rem;
+            }
+            .canvas {
+                min-height: 22rem;
+                padding: 0.75rem;
+            }
+            .graph {
+                min-width: 34rem;
+                min-height: 25rem;
+            }
+            .node {
+                width: 14rem;
+                min-height: 7rem;
+                padding: 0.7rem;
+            }
+            .node-footer button {
+                padding: 0.36rem 0.45rem;
+            }
+            .output {
+                padding: 0.75rem;
+            }
+            .output pre {
+                max-height: 12rem;
+            }
+            .binding {
+                grid-template-columns: 1fr;
+            }
+            .binding .wide {
+                grid-column: auto;
+            }
+        }
+    </style>
+</head>
+<body>
+    <?php wp_app_body_open(); ?>
+
+    <div id="pipes-app" class="app">
+        <aside class="sidebar">
+            <h1 class="brand">Pipes</h1>
+            <button class="primary" data-action="new-pipe">New Pipe</button>
+
+            <h2 class="section-title">Saved</h2>
+            <div class="list" data-pipes-list>
+                <div class="notice">Loading pipes...</div>
+            </div>
+
+            <h2 class="section-title">Abilities</h2>
+            <input class="search" type="search" data-ability-search placeholder="Search abilities">
+            <div class="list" data-abilities-list>
+                <div class="notice">Loading abilities...</div>
+            </div>
+        </aside>
+
+        <main class="workspace">
+            <div class="topbar">
+                <div class="title-row">
+                    <input type="text" data-title value="Untitled Pipe" aria-label="Pipe title">
+                    <span class="notice" data-status>Not saved</span>
+                </div>
+                <div class="actions">
+                    <button data-action="save">Save</button>
+                    <button data-action="run">Run</button>
+                    <button class="danger" data-action="delete">Delete</button>
+                </div>
+            </div>
+
+            <section class="canvas">
+                <div class="graph" data-graph>
+                    <svg class="edges" data-edges></svg>
+                    <div class="empty" data-empty>Add abilities from the ability tray to build a flow.</div>
+                </div>
+            </section>
+
+            <section class="output">
+                <strong>Run Output</strong>
+                <pre data-output>{}</pre>
+            </section>
+        </main>
+
+        <aside class="inspector" data-inspector>
+            <div class="empty">Select a node to configure inputs and bindings.</div>
+        </aside>
+    </div>
+
+    <script>
+    (() => {
+        const config = {
+            restUrl: <?php echo wp_json_encode( esc_url_raw( rest_url( 'pipes/v1/' ) ) ); ?>,
+            nonce: <?php echo wp_json_encode( wp_create_nonce( 'wp_rest' ) ); ?>
+        };
+
+        const state = {
+            abilities: [],
+            pipes: [],
+            selectedPipeId: null,
+            selectedNodeId: null,
+            search: '',
+            title: 'Untitled Pipe',
+            graph: { nodes: [], edges: [] },
+            dirty: false
+        };
+
+        const $ = (selector, root = document) => root.querySelector(selector);
+        const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
+
+        const request = async (path, options = {}) => {
+            const response = await fetch(config.restUrl + path, {
+                ...options,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-WP-Nonce': config.nonce,
+                    ...(options.headers || {})
+                }
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(data.message || data?.data?.message || 'Request failed');
+            }
+            return data;
+        };
+
+        const setStatus = (message, isError = false) => {
+            const status = $('[data-status]');
+            status.textContent = message;
+            status.classList.toggle('error', isError);
+        };
+
+        const markDirty = () => {
+            state.dirty = true;
+            setStatus('Unsaved changes');
+        };
+
+        const abilityById = (id) => state.abilities.find((ability) => ability.id === id);
+        const nodeById = (id) => state.graph.nodes.find((node) => node.id === id);
+
+        const schemaProperties = (schema) => {
+            if (!schema || !schema.properties || typeof schema.properties !== 'object') {
+                return [];
+            }
+            const required = Array.isArray(schema.required) ? schema.required : [];
+            return Object.entries(schema.properties).map(([name, details]) => ({
+                name,
+                type: Array.isArray(details?.type) ? details.type.join('|') : (details?.type || 'any'),
+                description: details?.description || '',
+                required: required.includes(name)
+            }));
+        };
+
+        const defaultArgsForAbility = (ability) => {
+            const args = {};
+            for (const prop of schemaProperties(ability.input_schema)) {
+                if (prop.required) {
+                    args[prop.name] = '';
+                }
+            }
+            return args;
+        };
+
+        const addNode = (ability) => {
+            const index = state.graph.nodes.length;
+            const id = `node-${Date.now().toString(36)}-${index}`;
+            const previous = state.graph.nodes[index - 1];
+            state.graph.nodes.push({
+                id,
+                ability_id: ability.id,
+                label: ability.label,
+                args: defaultArgsForAbility(ability),
+                bindings: [],
+                position: { x: 28 + index * 300, y: 42 + (index % 3) * 38 }
+            });
+            if (previous) {
+                state.graph.edges.push({ from: previous.id, to: id });
+            }
+            state.selectedNodeId = id;
+            markDirty();
+            render();
+        };
+
+        const newPipe = () => {
+            state.selectedPipeId = null;
+            state.selectedNodeId = null;
+            state.title = 'Untitled Pipe';
+            state.graph = { nodes: [], edges: [] };
+            state.dirty = false;
+            $('[data-title]').value = state.title;
+            $('[data-output]').textContent = '{}';
+            setStatus('Not saved');
+            render();
+        };
+
+        const loadPipe = async (id) => {
+            const data = await request(`pipes/${id}`);
+            state.selectedPipeId = data.pipe.id;
+            state.title = data.pipe.title;
+            state.graph = data.pipe.graph || { nodes: [], edges: [] };
+            state.selectedNodeId = state.graph.nodes[0]?.id || null;
+            state.dirty = false;
+            $('[data-title]').value = state.title;
+            $('[data-output]').textContent = '{}';
+            setStatus('Saved');
+            render();
+        };
+
+        const savePipe = async () => {
+            state.title = $('[data-title]').value.trim() || 'Untitled Pipe';
+            const path = state.selectedPipeId ? `pipes/${state.selectedPipeId}` : 'pipes';
+            const data = await request(path, {
+                method: 'POST',
+                body: JSON.stringify({ title: state.title, graph: state.graph })
+            });
+            state.selectedPipeId = data.pipe.id;
+            state.title = data.pipe.title;
+            state.graph = data.pipe.graph;
+            state.dirty = false;
+            $('[data-title]').value = state.title;
+            setStatus('Saved');
+            await loadPipes();
+            render();
+        };
+
+        const deletePipe = async () => {
+            if (!state.selectedPipeId) {
+                newPipe();
+                return;
+            }
+            if (!window.confirm('Delete this pipe?')) {
+                return;
+            }
+            await request(`pipes/${state.selectedPipeId}`, { method: 'DELETE' });
+            await loadPipes();
+            newPipe();
+        };
+
+        const runPipe = async () => {
+            setStatus('Running...');
+            const data = await request('run', {
+                method: 'POST',
+                body: JSON.stringify({
+                    pipe_id: state.selectedPipeId || 0,
+                    graph: state.graph,
+                    confirm_destructive: $('[data-confirm-destructive]')?.checked || false
+                })
+            });
+            $('[data-output]').textContent = JSON.stringify(data, null, 2);
+            setStatus(state.dirty ? 'Unsaved changes' : 'Run complete');
+        };
+
+        const loadPipes = async () => {
+            const data = await request('pipes');
+            state.pipes = data.pipes || [];
+            renderPipes();
+        };
+
+        const loadAbilities = async () => {
+            const data = await request('abilities');
+            state.abilities = data.abilities || [];
+            renderAbilities();
+        };
+
+        const renderPipes = () => {
+            const list = $('[data-pipes-list]');
+            if (!state.pipes.length) {
+                list.innerHTML = '<div class="notice">No saved pipes yet.</div>';
+                return;
+            }
+            list.innerHTML = '';
+            for (const pipe of state.pipes) {
+                const button = document.createElement('button');
+                button.className = `list-item ${pipe.id === state.selectedPipeId ? 'active' : ''}`;
+                button.innerHTML = `<strong></strong><span class="meta"></span>`;
+                $('strong', button).textContent = pipe.title;
+                $('.meta', button).textContent = new Date(pipe.modified).toLocaleString();
+                button.addEventListener('click', () => loadPipe(pipe.id).catch((error) => setStatus(error.message, true)));
+                list.append(button);
+            }
+        };
+
+        const renderAbilities = () => {
+            const list = $('[data-abilities-list]');
+            const query = state.search.toLowerCase();
+            const abilities = state.abilities.filter((ability) => {
+                const haystack = `${ability.label} ${ability.id} ${ability.category} ${ability.description}`.toLowerCase();
+                return haystack.includes(query);
+            });
+            if (!abilities.length) {
+                list.innerHTML = '<div class="notice">No matching abilities.</div>';
+                return;
+            }
+            list.innerHTML = '';
+            for (const ability of abilities) {
+                const button = document.createElement('button');
+                button.className = 'list-item';
+                button.innerHTML = `
+                    <strong></strong>
+                    <span class="meta"></span>
+                    <span class="badge-row"></span>
+                `;
+                $('strong', button).textContent = ability.label;
+                $('.meta', button).textContent = ability.id;
+                const badges = $('.badge-row', button);
+                if (ability.category) {
+                    badges.append(badge(ability.category));
+                }
+                if (ability.readonly) {
+                    badges.append(badge('read-only'));
+                }
+                if (ability.destructive) {
+                    badges.append(badge('destructive', 'warn'));
+                }
+                button.addEventListener('click', () => addNode(ability));
+                list.append(button);
+            }
+        };
+
+        const badge = (text, className = '') => {
+            const span = document.createElement('span');
+            span.className = `badge ${className}`;
+            span.textContent = text;
+            return span;
+        };
+
+        const renderGraph = () => {
+            const graph = $('[data-graph]');
+            $$('.node', graph).forEach((node) => node.remove());
+            $('[data-empty]').style.display = state.graph.nodes.length ? 'none' : 'block';
+
+            for (const node of state.graph.nodes) {
+                const ability = abilityById(node.ability_id);
+                const element = document.createElement('article');
+                element.className = `node ${node.id === state.selectedNodeId ? 'selected' : ''}`;
+                element.style.left = `${node.position.x}px`;
+                element.style.top = `${node.position.y}px`;
+                element.innerHTML = `
+                    <h2></h2>
+                    <div class="node-id"></div>
+                    <p class="meta"></p>
+                    <div class="badge-row"></div>
+                    <div class="node-footer">
+                        <button data-move="-1">Left</button>
+                        <button data-move="1">Right</button>
+                    </div>
+                `;
+                $('h2', element).textContent = node.label || ability?.label || node.ability_id;
+                $('.node-id', element).textContent = node.id;
+                $('p', element).textContent = ability?.description || '';
+                const badges = $('.badge-row', element);
+                if (ability?.readonly) {
+                    badges.append(badge('read-only'));
+                }
+                if (ability?.destructive) {
+                    badges.append(badge('destructive', 'warn'));
+                }
+                element.addEventListener('click', (event) => {
+                    if (event.target.matches('[data-move]')) {
+                        const direction = Number(event.target.dataset.move);
+                        node.position.x = Math.max(28, node.position.x + direction * 40);
+                        markDirty();
+                    } else {
+                        state.selectedNodeId = node.id;
+                    }
+                    render();
+                });
+                graph.append(element);
+            }
+
+            renderEdges();
+        };
+
+        const renderEdges = () => {
+            const svg = $('[data-edges]');
+            svg.innerHTML = '';
+            svg.setAttribute('width', '1200');
+            svg.setAttribute('height', '720');
+            for (const edge of state.graph.edges) {
+                const from = nodeById(edge.from);
+                const to = nodeById(edge.to);
+                if (!from || !to) {
+                    continue;
+                }
+                const x1 = from.position.x + 256;
+                const y1 = from.position.y + 64;
+                const x2 = to.position.x;
+                const y2 = to.position.y + 64;
+                const mid = Math.max(40, (x2 - x1) / 2);
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                path.setAttribute('d', `M ${x1} ${y1} C ${x1 + mid} ${y1}, ${x2 - mid} ${y2}, ${x2} ${y2}`);
+                path.setAttribute('fill', 'none');
+                path.setAttribute('stroke', 'var(--pipes-accent)');
+                path.setAttribute('stroke-width', '2');
+                svg.append(path);
+            }
+        };
+
+        const renderInspector = () => {
+            const inspector = $('[data-inspector]');
+            const node = nodeById(state.selectedNodeId);
+            if (!node) {
+                inspector.innerHTML = '<div class="empty">Select a node to configure inputs and bindings.</div>';
+                return;
+            }
+            const ability = abilityById(node.ability_id);
+            const props = schemaProperties(ability?.input_schema);
+            inspector.innerHTML = `
+                <div class="field">
+                    <label>Node label</label>
+                    <input type="text" data-node-label>
+                </div>
+                <div class="schema">
+                    <h3>Inputs</h3>
+                    <div data-schema></div>
+                </div>
+                <div class="field">
+                    <label>Base args JSON</label>
+                    <textarea data-node-args spellcheck="false"></textarea>
+                </div>
+                <div class="field">
+                    <label><input type="checkbox" data-confirm-destructive> Confirm destructive abilities for run</label>
+                </div>
+                <div class="schema">
+                    <h3>Bindings</h3>
+                    <div data-bindings></div>
+                    <button data-action="add-binding">Add Binding</button>
+                </div>
+                <button class="danger" data-action="remove-node">Remove Node</button>
+            `;
+            $('[data-node-label]', inspector).value = node.label || ability?.label || node.ability_id;
+            $('[data-node-args]', inspector).value = JSON.stringify(node.args || {}, null, 2);
+
+            const schema = $('[data-schema]', inspector);
+            schema.innerHTML = props.length ? '' : '<div class="notice">This ability has no declared input schema.</div>';
+            for (const prop of props) {
+                const row = document.createElement('div');
+                row.className = 'schema-row';
+                row.innerHTML = `<strong></strong><span class="meta"></span><span class="notice"></span>`;
+                $('strong', row).textContent = `${prop.name}${prop.required ? ' *' : ''}`;
+                $('.meta', row).textContent = prop.type;
+                $('.notice', row).textContent = prop.description;
+                schema.append(row);
+            }
+
+            $('[data-node-label]', inspector).addEventListener('input', (event) => {
+                node.label = event.target.value;
+                markDirty();
+                renderGraph();
+            });
+            $('[data-node-args]', inspector).addEventListener('change', (event) => {
+                try {
+                    node.args = JSON.parse(event.target.value || '{}');
+                    markDirty();
+                    setStatus('Unsaved changes');
+                } catch (error) {
+                    setStatus('Invalid JSON in node args', true);
+                }
+            });
+            $('[data-action="add-binding"]', inspector).addEventListener('click', () => {
+                node.bindings = node.bindings || [];
+                node.bindings.push({ target: props[0]?.name || '', source: state.graph.nodes[0]?.id || '', path: '' });
+                markDirty();
+                renderInspector();
+            });
+            $('[data-action="remove-node"]', inspector).addEventListener('click', () => {
+                state.graph.nodes = state.graph.nodes.filter((candidate) => candidate.id !== node.id);
+                state.graph.edges = state.graph.edges.filter((edge) => edge.from !== node.id && edge.to !== node.id);
+                state.selectedNodeId = state.graph.nodes[0]?.id || null;
+                markDirty();
+                render();
+            });
+
+            renderBindings(node, props);
+        };
+
+        const renderBindings = (node, props) => {
+            const container = $('[data-bindings]');
+            const sourceNodes = state.graph.nodes.filter((candidate) => candidate.id !== node.id);
+            node.bindings = node.bindings || [];
+            if (!node.bindings.length) {
+                container.innerHTML = '<div class="notice">No bindings. Base args are passed directly.</div>';
+                return;
+            }
+            container.innerHTML = '';
+            node.bindings.forEach((binding, index) => {
+                const element = document.createElement('div');
+                element.className = 'binding';
+                element.innerHTML = `
+                    <div class="field">
+                        <label>Target input</label>
+                        <input type="text" data-binding-target>
+                    </div>
+                    <div class="field">
+                        <label>Source node</label>
+                        <select data-binding-source></select>
+                    </div>
+                    <div class="field wide">
+                        <label>Source result path</label>
+                        <input type="text" data-binding-path placeholder="items.0.id">
+                    </div>
+                    <button class="danger wide" data-remove-binding>Remove</button>
+                `;
+                const target = $('[data-binding-target]', element);
+                target.value = binding.target || props[0]?.name || '';
+                const select = $('[data-binding-source]', element);
+                for (const source of sourceNodes) {
+                    const option = document.createElement('option');
+                    option.value = source.id;
+                    option.textContent = source.label || source.ability_id;
+                    select.append(option);
+                }
+                select.value = binding.source || sourceNodes[0]?.id || '';
+                $('[data-binding-path]', element).value = binding.path || '';
+                target.addEventListener('input', (event) => {
+                    binding.target = event.target.value;
+                    markDirty();
+                });
+                select.addEventListener('change', (event) => {
+                    binding.source = event.target.value;
+                    syncEdgesFromBindings();
+                    markDirty();
+                    renderGraph();
+                });
+                $('[data-binding-path]', element).addEventListener('input', (event) => {
+                    binding.path = event.target.value;
+                    markDirty();
+                });
+                $('[data-remove-binding]', element).addEventListener('click', () => {
+                    node.bindings.splice(index, 1);
+                    syncEdgesFromBindings();
+                    markDirty();
+                    render();
+                });
+                container.append(element);
+            });
+        };
+
+        const syncEdgesFromBindings = () => {
+            const edges = [];
+            const seen = new Set();
+            for (const node of state.graph.nodes) {
+                for (const binding of node.bindings || []) {
+                    if (!binding.source || binding.source === node.id) {
+                        continue;
+                    }
+                    const key = `${binding.source}->${node.id}`;
+                    if (!seen.has(key)) {
+                        seen.add(key);
+                        edges.push({ from: binding.source, to: node.id });
+                    }
+                }
+            }
+            if (!edges.length) {
+                for (let i = 1; i < state.graph.nodes.length; i++) {
+                    edges.push({ from: state.graph.nodes[i - 1].id, to: state.graph.nodes[i].id });
+                }
+            }
+            state.graph.edges = edges;
+        };
+
+        const render = () => {
+            renderPipes();
+            renderAbilities();
+            renderGraph();
+            renderInspector();
+        };
+
+        $('[data-title]').addEventListener('input', (event) => {
+            state.title = event.target.value;
+            markDirty();
+        });
+        $('[data-ability-search]').addEventListener('input', (event) => {
+            state.search = event.target.value;
+            renderAbilities();
+        });
+        $('[data-action="new-pipe"]').addEventListener('click', newPipe);
+        $('[data-action="save"]').addEventListener('click', () => savePipe().catch((error) => setStatus(error.message, true)));
+        $('[data-action="delete"]').addEventListener('click', () => deletePipe().catch((error) => setStatus(error.message, true)));
+        $('[data-action="run"]').addEventListener('click', () => runPipe().catch((error) => setStatus(error.message, true)));
+
+        Promise.all([loadPipes(), loadAbilities()])
+            .then(render)
+            .catch((error) => setStatus(error.message, true));
+    })();
+    </script>
+
+    <?php wp_app_body_close(); ?>
+</body>
+</html>

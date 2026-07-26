@@ -278,6 +278,54 @@ class App extends BaseApp {
             'meta'                => $this->ability_meta( true, false, true, __( 'Use this to narrow list results before mapping, joining, or detail lookups.', 'pipes' ) ),
         ] );
 
+        $this->register_pipe_ability( 'pipes/search-replace-items', [
+            'label'               => __( 'Search Replace Items', 'pipes' ),
+            'description'         => __( 'Searches and replaces text at a dot-path inside every item in a list.', 'pipes' ),
+            'input_schema'        => [
+                'type'                 => 'object',
+                'required'             => [ 'items', 'path', 'search' ],
+                'properties'           => [
+                    'items'          => [
+                        'type'        => 'array',
+                        'description' => __( 'Items to change.', 'pipes' ),
+                        'items'       => [ 'type' => [ 'object', 'array', 'string', 'number', 'integer', 'boolean', 'null' ] ],
+                    ],
+                    'path'           => [
+                        'type'        => 'string',
+                        'description' => __( 'Dot path inside each item, such as title or author.name.', 'pipes' ),
+                    ],
+                    'search'         => [
+                        'type'        => 'string',
+                        'description' => __( 'Text to search for in the field value.', 'pipes' ),
+                    ],
+                    'replace'        => [
+                        'type'        => 'string',
+                        'description' => __( 'Replacement text. Leave empty to remove the search text.', 'pipes' ),
+                        'default'     => '',
+                    ],
+                    'case_sensitive' => [
+                        'type'        => 'boolean',
+                        'description' => __( 'Match uppercase and lowercase exactly.', 'pipes' ),
+                        'default'     => true,
+                    ],
+                ],
+                'additionalProperties' => false,
+            ],
+            'output_schema'       => [
+                'type'       => 'object',
+                'properties' => [
+                    'items'   => [
+                        'type'  => 'array',
+                        'items' => [ 'type' => [ 'object', 'array', 'string', 'number', 'integer', 'boolean', 'null' ] ],
+                    ],
+                    'total'   => [ 'type' => 'integer' ],
+                    'changed' => [ 'type' => 'integer' ],
+                ],
+            ],
+            'execute_callback'    => [ $this, 'ability_search_replace_items' ],
+            'meta'                => $this->ability_meta( true, false, true, __( 'Use this to clean up labels, titles, URLs, or other text fields before output.', 'pipes' ) ),
+        ] );
+
         $this->register_pipe_ability( 'pipes/pluck-field', [
             'label'               => __( 'Pluck Field', 'pipes' ),
             'description'         => __( 'Reads one dot-path from each item in a list and returns the collected values.', 'pipes' ),
@@ -661,6 +709,47 @@ class App extends BaseApp {
             'items'   => array_values( $filtered ),
             'total'   => count( $items ),
             'matched' => count( $filtered ),
+        ];
+    }
+
+    public function ability_search_replace_items( $input ): array {
+        $input          = is_array( $input ) ? $input : [];
+        $items          = isset( $input['items'] ) && is_array( $input['items'] ) ? array_values( $input['items'] ) : [];
+        $path           = (string) ( $input['path'] ?? '' );
+        $search         = (string) ( $input['search'] ?? '' );
+        $replace        = (string) ( $input['replace'] ?? '' );
+        $case_sensitive = array_key_exists( 'case_sensitive', $input ) ? (bool) $input['case_sensitive'] : true;
+        $changed        = 0;
+
+        if ( '' === $path || '' === $search ) {
+            return [
+                'items'   => $items,
+                'total'   => count( $items ),
+                'changed' => 0,
+            ];
+        }
+
+        foreach ( $items as &$item ) {
+            $value = $this->get_path_value( $item, $path );
+            if ( null === $value || is_array( $value ) || is_object( $value ) ) {
+                continue;
+            }
+
+            $text = $this->stringify_glue_value( $value );
+            $next = $case_sensitive ? str_replace( $search, $replace, $text, $count ) : str_ireplace( $search, $replace, $text, $count );
+            if ( 0 === $count ) {
+                continue;
+            }
+
+            $this->set_path_value( $item, $path, $next );
+            $changed++;
+        }
+        unset( $item );
+
+        return [
+            'items'   => array_values( $items ),
+            'total'   => count( $items ),
+            'changed' => $changed,
         ];
     }
 
@@ -1551,6 +1640,46 @@ class App extends BaseApp {
         }
 
         return $value;
+    }
+
+    private function set_path_value( &$value, string $path, $replacement ): bool {
+        $parts = array_values( array_filter( explode( '.', trim( $path ) ), static fn( string $part ): bool => '' !== $part ) );
+        if ( [] === $parts ) {
+            $value = $replacement;
+            return true;
+        }
+
+        $cursor =& $value;
+        foreach ( $parts as $index => $part ) {
+            $is_last = count( $parts ) - 1 === $index;
+            if ( is_array( $cursor ) ) {
+                if ( ! array_key_exists( $part, $cursor ) ) {
+                    return false;
+                }
+                if ( $is_last ) {
+                    $cursor[ $part ] = $replacement;
+                    return true;
+                }
+                $cursor =& $cursor[ $part ];
+                continue;
+            }
+
+            if ( is_object( $cursor ) ) {
+                if ( ! isset( $cursor->{$part} ) ) {
+                    return false;
+                }
+                if ( $is_last ) {
+                    $cursor->{$part} = $replacement;
+                    return true;
+                }
+                $cursor =& $cursor->{$part};
+                continue;
+            }
+
+            return false;
+        }
+
+        return false;
     }
 
     private function stringify_glue_value( $value ): string {

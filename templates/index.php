@@ -284,6 +284,40 @@
         .list-arg textarea {
             min-height: 4rem;
         }
+        .flow-add {
+            border: 1px dashed var(--pipes-border);
+            border-radius: var(--pipes-radius);
+            background: color-mix(in srgb, var(--pipes-surface) 72%, transparent);
+            padding: 0.85rem;
+        }
+        .flow-add-button {
+            align-items: center;
+            display: flex;
+            gap: 0.55rem;
+            justify-content: center;
+            width: 100%;
+        }
+        .flow-add-button strong {
+            align-items: center;
+            background: var(--pipes-accent);
+            border-radius: 999px;
+            color: #fff;
+            display: inline-flex;
+            font-size: 1.05rem;
+            height: 1.65rem;
+            justify-content: center;
+            width: 1.65rem;
+        }
+        .flow-add-picker {
+            display: grid;
+            gap: 0.55rem;
+        }
+        .flow-add-results {
+            display: grid;
+            gap: 0.35rem;
+            max-height: 18rem;
+            overflow: auto;
+        }
         .graph {
             position: relative;
             min-width: 46rem;
@@ -710,6 +744,8 @@
             lastRunResults: {},
             activeBindingTarget: '',
             builderMode: window.matchMedia('(max-width: 760px)').matches ? 'list' : 'visual',
+            listAddOpen: false,
+            listAddSearch: '',
             dirty: false
         };
 
@@ -1104,6 +1140,8 @@
             state.graph = { nodes: [], edges: [] };
             state.lastRunResults = {};
             state.activeBindingTarget = '';
+            state.listAddOpen = false;
+            state.listAddSearch = '';
             state.dirty = false;
             $('[data-title]').value = state.title;
             $('[data-output]').textContent = '{}';
@@ -1121,6 +1159,8 @@
             state.graph = data.pipe.graph || { nodes: [], edges: [] };
             state.lastRunResults = {};
             state.activeBindingTarget = '';
+            state.listAddOpen = false;
+            state.listAddSearch = '';
             state.dirty = false;
             $('[data-title]').value = state.title;
             $('[data-output]').textContent = '{}';
@@ -1139,6 +1179,8 @@
             state.selectedNodeId = state.graph.nodes[0]?.id || null;
             state.lastRunResults = {};
             state.activeBindingTarget = '';
+            state.listAddOpen = false;
+            state.listAddSearch = '';
             state.dirty = false;
             $('[data-title]').value = state.title;
             $('[data-output]').textContent = '{}';
@@ -1492,6 +1534,65 @@
                 });
                 list.append(step);
             });
+            renderListAddNode(list);
+        };
+
+        const renderListAddNode = (list) => {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'flow-add';
+            if (!state.listAddOpen) {
+                wrapper.innerHTML = '<button class="flow-add-button" data-list-add-open><strong>+</strong><span>Add next node</span></button>';
+                $('[data-list-add-open]', wrapper).addEventListener('click', () => {
+                    state.listAddOpen = true;
+                    renderListBuilder();
+                    $('[data-list-add-search]')?.focus();
+                });
+                list.append(wrapper);
+                return;
+            }
+
+            wrapper.innerHTML = `
+                <div class="flow-add-picker">
+                    <input type="search" data-list-add-search placeholder="Search abilities">
+                    <div class="flow-add-results" data-list-add-results></div>
+                    <button data-list-add-cancel>Cancel</button>
+                </div>
+            `;
+            const search = $('[data-list-add-search]', wrapper);
+            const results = $('[data-list-add-results]', wrapper);
+            search.value = state.listAddSearch;
+            const renderResults = () => {
+                const query = state.listAddSearch.toLowerCase();
+                const abilities = state.abilities.filter((ability) => {
+                    const haystack = `${ability.label} ${ability.id} ${ability.category} ${ability.description}`.toLowerCase();
+                    return haystack.includes(query);
+                }).slice(0, 12);
+                results.innerHTML = abilities.length ? '' : '<div class="notice">No matching abilities.</div>';
+                for (const ability of abilities) {
+                    const button = document.createElement('button');
+                    button.className = 'list-item';
+                    button.innerHTML = '<strong></strong><span class="meta"></span>';
+                    $('strong', button).textContent = ability.label;
+                    $('.meta', button).textContent = ability.id;
+                    button.addEventListener('click', () => {
+                        state.listAddOpen = false;
+                        state.listAddSearch = '';
+                        addNode(ability);
+                    });
+                    results.append(button);
+                }
+            };
+            search.addEventListener('input', (event) => {
+                state.listAddSearch = event.target.value;
+                renderResults();
+            });
+            $('[data-list-add-cancel]', wrapper).addEventListener('click', () => {
+                state.listAddOpen = false;
+                state.listAddSearch = '';
+                renderListBuilder();
+            });
+            renderResults();
+            list.append(wrapper);
         };
 
         const moveNode = (index, direction) => {

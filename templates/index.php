@@ -284,6 +284,23 @@
         .list-arg textarea {
             min-height: 4rem;
         }
+        .output-preview {
+            border-top: 1px solid var(--pipes-border);
+            display: grid;
+            gap: 0.45rem;
+            margin-top: 0.75rem;
+            padding-top: 0.75rem;
+        }
+        .output-preview pre {
+            background: var(--pipes-surface-alt);
+            border: 1px solid var(--pipes-border);
+            border-radius: var(--pipes-radius);
+            margin: 0;
+            max-height: 14rem;
+            overflow: auto;
+            padding: 0.65rem;
+            white-space: pre-wrap;
+        }
         .flow-add {
             border: 1px dashed var(--pipes-border);
             border-radius: var(--pipes-radius);
@@ -1082,6 +1099,24 @@
             return text.length > 44 ? `${text.slice(0, 41)}...` : text;
         };
 
+        const isOutputNode = (node) => String(node.ability_id || '').startsWith('pipes/output-');
+
+        const compactPreview = (value) => {
+            if (value === undefined) {
+                return 'Run the pipe to preview this output.';
+            }
+            if (value === null) {
+                return 'null';
+            }
+            if (Array.isArray(value)) {
+                return JSON.stringify(value.slice(0, 5), null, 2);
+            }
+            if (typeof value === 'object') {
+                return JSON.stringify(value, null, 2);
+            }
+            return String(value);
+        };
+
         const ensureActiveBindingTarget = (node, props) => {
             if (!node) {
                 state.activeBindingTarget = '';
@@ -1646,6 +1681,10 @@
                         <button class="danger" data-step-action="remove">Remove</button>
                     </div>
                     <div class="list-args" data-list-args></div>
+                    <div class="output-preview" data-output-preview hidden>
+                        <strong>Output preview</strong>
+                        <pre></pre>
+                    </div>
                 `;
                 $('.flow-step-number', step).textContent = String(index + 1);
                 $('[data-step-label]', step).value = node.label || ability?.label || node.ability_id;
@@ -1662,6 +1701,7 @@
                     badges.append(badge('has output'));
                 }
                 renderListArgs(node, props, $('[data-list-args]', step));
+                renderOutputPreview(node, $('[data-output-preview]', step));
                 $('[data-step-label]', step).addEventListener('input', (event) => {
                     state.selectedNodeId = node.id;
                     node.label = event.target.value;
@@ -1756,6 +1796,18 @@
             });
             renderResults();
             list.append(wrapper);
+        };
+
+        const renderOutputPreview = (node, container) => {
+            if (!container || !isOutputNode(node)) {
+                return;
+            }
+            const result = state.lastRunResults[node.id]?.result;
+            const value = result && typeof result === 'object' && Object.prototype.hasOwnProperty.call(result, 'value') ?
+                result.value :
+                undefined;
+            container.hidden = false;
+            $('pre', container).textContent = compactPreview(value);
         };
 
         const moveNode = (index, direction) => {
@@ -1956,6 +2008,10 @@
                     <div data-bindings></div>
                     <button data-action="add-binding">Add Binding</button>
                 </div>
+                <div class="output-preview" data-inspector-output-preview hidden>
+                    <strong>Output preview</strong>
+                    <pre></pre>
+                </div>
                 <button class="danger" data-action="remove-node">Remove Node</button>
             `;
             $('[data-node-label]', inspector).value = node.label || ability?.label || node.ability_id;
@@ -2011,6 +2067,7 @@
 
             renderOutputPaths(node);
             renderBindings(node, props);
+            renderOutputPreview(node, $('[data-inspector-output-preview]', inspector));
         };
 
         const renderOutputPaths = (node) => {

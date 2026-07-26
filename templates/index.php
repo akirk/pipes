@@ -291,6 +291,32 @@
         .list-arg textarea {
             min-height: 4rem;
         }
+        .checkbox-grid {
+            display: grid;
+            gap: 0.4rem;
+            grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+        }
+        .checkbox-grid label {
+            align-items: center;
+            background: var(--pipes-surface-alt);
+            border: 1px solid var(--pipes-border);
+            border-radius: var(--pipes-radius);
+            color: var(--pipes-text);
+            display: flex;
+            font-size: 0.82rem;
+            font-weight: 500;
+            gap: 0.4rem;
+            min-width: 0;
+            padding: 0.4rem 0.5rem;
+        }
+        .checkbox-grid input {
+            flex: 0 0 auto;
+        }
+        .checkbox-grid span {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
         .output-preview {
             border-top: 1px solid var(--pipes-border);
             display: grid;
@@ -1129,6 +1155,34 @@
             return suggestions.slice(0, 80);
         };
 
+        const valueForBinding = (node, target) => {
+            const binding = (node.bindings || []).find((candidate) => candidate.target === target);
+            const sourceResult = binding ? state.lastRunResults[binding.source]?.result : undefined;
+            return sourceResult === undefined ? undefined : pathValue(sourceResult, binding.path || '');
+        };
+
+        const dashboardListColumnSuggestionsFor = (node) => {
+            const value = valueForBinding(node, 'value') ?? state.lastRunResults[node.id]?.input?.value;
+            if (!Array.isArray(value)) {
+                return [];
+            }
+            const seen = new Set();
+            const columns = [];
+            for (const item of value.slice(0, 10)) {
+                if (!item || typeof item !== 'object' || Array.isArray(item)) {
+                    continue;
+                }
+                for (const key of Object.keys(item)) {
+                    if (seen.has(key)) {
+                        continue;
+                    }
+                    seen.add(key);
+                    columns.push(key);
+                }
+            }
+            return columns.slice(0, 80);
+        };
+
         const formatPathValue = (value) => {
             if (value === null) {
                 return 'null';
@@ -1168,7 +1222,7 @@
 
         const isListArray = (value) => Array.isArray(value) && Object.keys(value).every((key) => String(Number(key)) === key);
 
-        const renderValueHtml = (value, container) => {
+        const renderValueHtml = (value, container, selectedColumns = []) => {
             container.innerHTML = '';
             if (value === null || value === undefined) {
                 const paragraph = document.createElement('p');
@@ -1189,7 +1243,13 @@
                 }
                 const first = value[0];
                 if (first && typeof first === 'object' && !Array.isArray(first)) {
-                    const columns = Object.keys(first).slice(0, 6);
+                    const availableColumns = Object.keys(first);
+                    let columns = selectedColumns.length ?
+                        selectedColumns.filter((column) => availableColumns.includes(column)) :
+                        availableColumns.slice(0, 6);
+                    if (!columns.length) {
+                        columns = availableColumns.slice(0, 6);
+                    }
                     const table = document.createElement('table');
                     const thead = document.createElement('thead');
                     const headRow = document.createElement('tr');
@@ -1983,7 +2043,8 @@
                         rendered.innerHTML = '';
                         appendTextElement(rendered, 'p', stringifyGlueValue(value));
                     } else {
-                        renderValueHtml(value, rendered);
+                        const columns = Array.isArray(ensureNodeArgs(node).columns) ? ensureNodeArgs(node).columns : [];
+                        renderValueHtml(value, rendered, columns);
                     }
                     return;
                 }
@@ -2323,6 +2384,52 @@
                 row.className = 'list-arg';
                 row.innerHTML = '<label></label>';
                 $('label', row).textContent = `${prop.name}${prop.required ? ' *' : ''}`;
+
+                if (node.ability_id === 'pipes/output-dashboard-list' && prop.name === 'columns') {
+                    const hasConfiguredColumns = Array.isArray(ensureNodeArgs(node).columns);
+                    const configuredColumns = hasConfiguredColumns ? ensureNodeArgs(node).columns : [];
+                    const suggestions = dashboardListColumnSuggestionsFor(node);
+                    const selectedColumns = hasConfiguredColumns ? configuredColumns : suggestions.slice(0, 6);
+                    const choices = Array.from(new Set([...suggestions, ...configuredColumns]));
+                    if (!choices.length) {
+                        const notice = document.createElement('div');
+                        notice.className = 'notice';
+                        notice.textContent = 'Run the pipe to inspect table columns.';
+                        row.append(notice);
+                    } else {
+                        const grid = document.createElement('div');
+                        grid.className = 'checkbox-grid';
+                        for (const column of choices) {
+                            const label = document.createElement('label');
+                            const checkbox = document.createElement('input');
+                            const text = document.createElement('span');
+                            checkbox.type = 'checkbox';
+                            checkbox.checked = selectedColumns.includes(column);
+                            text.textContent = column;
+                            checkbox.addEventListener('change', (event) => {
+                                const current = Array.isArray(ensureNodeArgs(node).columns) ? ensureNodeArgs(node).columns : suggestions.slice(0, 6);
+                                if (event.target.checked) {
+                                    ensureNodeArgs(node).columns = Array.from(new Set([...current, column]));
+                                } else {
+                                    ensureNodeArgs(node).columns = current.filter((candidate) => candidate !== column);
+                                }
+                                markDirty();
+                                render();
+                            });
+                            label.append(checkbox, text);
+                            grid.append(label);
+                        }
+                        row.append(grid);
+                    }
+                    if (prop.description) {
+                        const description = document.createElement('div');
+                        description.className = 'meta';
+                        description.textContent = prop.description;
+                        row.append(description);
+                    }
+                    container.append(row);
+                    continue;
+                }
 
                 const bindSelect = document.createElement('select');
                 const manualOption = document.createElement('option');

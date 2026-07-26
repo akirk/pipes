@@ -360,20 +360,30 @@ class App extends BaseApp {
         ] );
 
         foreach ( $this->output_ability_labels() as $ability_id => $label ) {
+            $input_schema = [
+                'type'                 => 'object',
+                'required'             => [ 'value' ],
+                'properties'           => [
+                    'value' => [
+                        'type'        => [ 'object', 'array', 'string', 'number', 'integer', 'boolean', 'null' ],
+                        'description' => __( 'Value to publish. Bind this to an upstream output field.', 'pipes' ),
+                    ],
+                ],
+                'additionalProperties' => false,
+            ];
+
+            if ( 'pipes/output-dashboard-list' === $ability_id ) {
+                $input_schema['properties']['columns'] = [
+                    'type'        => 'array',
+                    'description' => __( 'Object fields to show as table columns. Leave empty to show the first six fields.', 'pipes' ),
+                    'items'       => [ 'type' => 'string' ],
+                ];
+            }
+
             $this->register_pipe_ability( $ability_id, [
                 'label'               => $label,
                 'description'         => __( 'Publishes a bound pipe value into a WordPress surface.', 'pipes' ),
-                'input_schema'        => [
-                    'type'                 => 'object',
-                    'required'             => [ 'value' ],
-                    'properties'           => [
-                        'value' => [
-                            'type'        => [ 'object', 'array', 'string', 'number', 'integer', 'boolean', 'null' ],
-                            'description' => __( 'Value to publish. Bind this to an upstream output field.', 'pipes' ),
-                        ],
-                    ],
-                    'additionalProperties' => false,
-                ],
+                'input_schema'        => $input_schema,
                 'output_schema'       => [
                     'type'       => 'object',
                     'properties' => [
@@ -959,6 +969,7 @@ class App extends BaseApp {
                 'ability_id'  => $ability_id,
                 'node_id'     => (string) ( $node['id'] ?? '' ),
                 'label'       => (string) ( $node['label'] ?: $post->post_title ),
+                'args'        => is_array( $node['args'] ?? null ) ? $node['args'] : [],
                 'render_mode' => $this->render_mode_for_output_ability( $ability_id ),
             ];
         }
@@ -1100,10 +1111,18 @@ class App extends BaseApp {
             return '<p>' . esc_html( $this->stringify_glue_value( $value ) ) . '</p>';
         }
 
-        return $this->render_value_html( $value );
+        $columns = [];
+        if ( 'pipes/output-dashboard-list' === ( $target['ability_id'] ?? '' ) && is_array( $target['args']['columns'] ?? null ) ) {
+            $columns = array_values( array_filter(
+                array_map( 'strval', $target['args']['columns'] ),
+                static fn( string $column ): bool => '' !== $column
+            ) );
+        }
+
+        return $this->render_value_html( $value, $columns );
     }
 
-    private function render_value_html( $value ): string {
+    private function render_value_html( $value, array $selected_columns = [] ): string {
         if ( null === $value ) {
             return '<p><em>' . esc_html__( 'No output.', 'pipes' ) . '</em></p>';
         }
@@ -1119,7 +1138,11 @@ class App extends BaseApp {
 
             $first = reset( $value );
             if ( is_array( $first ) ) {
-                $columns = array_slice( array_keys( $first ), 0, 6 );
+                $available_columns = array_keys( $first );
+                $columns = [] === $selected_columns ? array_slice( $available_columns, 0, 6 ) : array_values( array_intersect( $selected_columns, $available_columns ) );
+                if ( [] === $columns ) {
+                    $columns = array_slice( $available_columns, 0, 6 );
+                }
                 $html = '<table><thead><tr>';
                 foreach ( $columns as $column ) {
                     $html .= '<th>' . esc_html( (string) $column ) . '</th>';
@@ -1803,7 +1826,9 @@ class App extends BaseApp {
                             'id'         => 'dashboard',
                             'ability_id' => 'pipes/output-dashboard-list',
                             'label'      => __( 'Latest 5 Flight Logs', 'pipes' ),
-                            'args'       => [],
+                            'args'       => [
+                                'columns' => [ 'date', 'aircraft', 'departure', 'arrival', 'duration' ],
+                            ],
                             'bindings'   => [
                                 [ 'target' => 'value', 'source' => 'latest-five', 'path' => 'items' ],
                             ],

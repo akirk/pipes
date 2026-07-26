@@ -788,6 +788,15 @@
             setStatus('Unsaved changes');
         };
 
+        const savedArgsStatus = () => {
+            const node = selectedNode();
+            if (!node) {
+                return 'Saved';
+            }
+            const args = JSON.stringify(node.args || {});
+            return `Saved ${node.label || node.ability_id} args: ${args.length > 180 ? `${args.slice(0, 177)}...` : args}`;
+        };
+
         const setPipeUrl = (pipeId = null) => {
             const url = new URL(window.location.href);
             if (pipeId) {
@@ -1321,9 +1330,9 @@
             state.dirty = false;
             $('[data-title]').value = state.title;
             setPipeUrl(state.selectedPipeId);
-            setStatus('Saved');
             await loadPipes();
             render();
+            setStatus(savedArgsStatus());
         };
 
         const deletePipe = async () => {

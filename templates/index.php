@@ -192,7 +192,7 @@
         }
         .node {
             position: absolute;
-            width: 16rem;
+            width: 18rem;
             min-height: 8rem;
             border: 1px solid var(--pipes-border);
             border-radius: var(--pipes-radius);
@@ -212,6 +212,71 @@
             font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
             color: var(--pipes-muted);
             font-size: 0.76rem;
+        }
+        .port-groups {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.55rem;
+            margin-top: 0.65rem;
+        }
+        .port-group-title {
+            color: var(--pipes-muted);
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.25rem;
+            text-transform: uppercase;
+        }
+        .port {
+            position: relative;
+            display: block;
+            width: 100%;
+            border: 1px solid var(--pipes-border);
+            background: color-mix(in srgb, var(--pipes-surface-alt) 62%, transparent);
+            color: var(--pipes-text);
+            font-size: 0.72rem;
+            line-height: 1.2;
+            margin: 0.25rem 0;
+            overflow-wrap: anywhere;
+            padding: 0.32rem 0.42rem;
+            text-align: left;
+        }
+        .port::before,
+        .port::after {
+            content: "";
+            position: absolute;
+            top: 50%;
+            width: 0.55rem;
+            height: 0.55rem;
+            border: 2px solid var(--pipes-accent);
+            border-radius: 999px;
+            background: var(--pipes-surface);
+            transform: translateY(-50%);
+        }
+        .input-port {
+            padding-left: 0.7rem;
+        }
+        .input-port::before {
+            left: -1.16rem;
+        }
+        .input-port::after {
+            display: none;
+        }
+        .output-port {
+            padding-right: 0.7rem;
+        }
+        .output-port::before {
+            display: none;
+        }
+        .output-port::after {
+            right: -1.16rem;
+        }
+        .port.bound {
+            border-color: var(--pipes-accent);
+            background: color-mix(in srgb, var(--pipes-accent) 10%, var(--pipes-surface));
+        }
+        .port.active {
+            box-shadow: 0 0 0 2px color-mix(in srgb, var(--pipes-accent) 20%, transparent);
         }
         .node-footer {
             display: flex;
@@ -500,6 +565,12 @@
 
         const $ = (selector, root = document) => root.querySelector(selector);
         const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
+        const selectorEscape = (value) => {
+            if (window.CSS && typeof window.CSS.escape === 'function') {
+                return window.CSS.escape(String(value));
+            }
+            return String(value).replace(/["\\]/g, '\\$&');
+        };
 
         const request = async (path, options = {}) => {
             const response = await fetch(config.restUrl + path, {
@@ -544,6 +615,49 @@
                 description: details?.description || '',
                 required: required.includes(name)
             }));
+        };
+
+        const inputPortsForNode = (node) => {
+            const ability = abilityById(node.ability_id);
+            const props = schemaProperties(ability?.input_schema);
+            const ports = props.length ?
+                props.slice(0, 6).map((prop) => ({ name: prop.name, label: prop.name })) :
+                Object.keys(node.args || {}).slice(0, 6).map((key) => ({ name: key, label: key }));
+            for (const binding of node.bindings || []) {
+                if (binding.target && !ports.some((port) => port.name === binding.target)) {
+                    ports.push({ name: binding.target, label: binding.target });
+                }
+            }
+            return ports;
+        };
+
+        const outputPortsForNode = (node) => {
+            const runResult = state.lastRunResults[node.id]?.result;
+            let ports = [];
+            if (runResult !== undefined) {
+                ports = flattenPaths(runResult)
+                    .filter((item) => item.path)
+                    .slice(0, 6)
+                    .map((item) => ({
+                        path: item.path,
+                        label: item.path,
+                        value: formatPathValue(item.value)
+                    }));
+            } else {
+                const ability = abilityById(node.ability_id);
+                const props = schemaProperties(ability?.output_schema);
+                ports = props.length ?
+                    props.slice(0, 6).map((prop) => ({ path: prop.name, label: prop.name, value: prop.type })) :
+                    [{ path: '', label: 'result', value: '' }];
+            }
+            for (const targetNode of state.graph.nodes) {
+                for (const binding of targetNode.bindings || []) {
+                    if (binding.source === node.id && !ports.some((port) => port.path === (binding.path || ''))) {
+                        ports.push({ path: binding.path || '', label: binding.path || 'result', value: 'bound' });
+                    }
+                }
+            }
+            return ports;
         };
 
         const defaultArgsForAbility = (ability) => {
@@ -867,6 +981,16 @@
                     <div class="node-id"></div>
                     <p class="meta"></p>
                     <div class="badge-row"></div>
+                    <div class="port-groups">
+                        <div>
+                            <div class="port-group-title">Inputs</div>
+                            <div data-input-ports></div>
+                        </div>
+                        <div>
+                            <div class="port-group-title">Outputs</div>
+                            <div data-output-ports></div>
+                        </div>
+                    </div>
                     <div class="node-footer">
                         <button data-move="-1">Left</button>
                         <button data-move="1">Right</button>
@@ -888,6 +1012,45 @@
                 if (state.lastRunResults[node.id]) {
                     badges.append(badge('has output'));
                 }
+                const inputPorts = $('[data-input-ports]', element);
+                for (const port of inputPortsForNode(node)) {
+                    const input = document.createElement('button');
+                    input.type = 'button';
+                    input.className = 'port input-port';
+                    input.dataset.portKind = 'input';
+                    input.dataset.nodeId = node.id;
+                    input.dataset.portName = port.name;
+                    if ((node.bindings || []).some((binding) => binding.target === port.name)) {
+                        input.classList.add('bound');
+                    }
+                    if (node.id === state.selectedNodeId && state.activeBindingTarget === port.name) {
+                        input.classList.add('active');
+                    }
+                    input.textContent = port.label;
+                    input.addEventListener('click', (event) => {
+                        event.stopPropagation();
+                        state.selectedNodeId = node.id;
+                        state.activeBindingTarget = port.name;
+                        render();
+                    });
+                    inputPorts.append(input);
+                }
+                const outputPorts = $('[data-output-ports]', element);
+                for (const port of outputPortsForNode(node)) {
+                    const output = document.createElement('button');
+                    output.type = 'button';
+                    output.className = 'port output-port';
+                    output.dataset.portKind = 'output';
+                    output.dataset.nodeId = node.id;
+                    output.dataset.portPath = port.path;
+                    output.title = port.value ? `${port.label}: ${port.value}` : port.label;
+                    output.textContent = port.label;
+                    output.addEventListener('click', (event) => {
+                        event.stopPropagation();
+                        bindPathToActiveInput(node.id, port.path);
+                    });
+                    outputPorts.append(output);
+                }
                 element.addEventListener('click', (event) => {
                     if (event.target.matches('[data-move]')) {
                         const direction = Number(event.target.dataset.move);
@@ -907,26 +1070,78 @@
         const renderEdges = () => {
             const svg = $('[data-edges]');
             svg.innerHTML = '';
-            svg.setAttribute('width', '1200');
-            svg.setAttribute('height', '720');
-            for (const edge of state.graph.edges) {
-                const from = nodeById(edge.from);
-                const to = nodeById(edge.to);
-                if (!from || !to) {
-                    continue;
+            const maxX = Math.max(1200, ...state.graph.nodes.map((node) => (node.position?.x || 0) + 360));
+            const maxY = Math.max(720, ...state.graph.nodes.map((node) => (node.position?.y || 0) + 260));
+            svg.setAttribute('width', String(maxX));
+            svg.setAttribute('height', String(maxY));
+            let rendered = 0;
+            for (const node of state.graph.nodes) {
+                for (const binding of node.bindings || []) {
+                    if (!binding.source || binding.source === node.id) {
+                        continue;
+                    }
+                    rendered += renderBindingEdge(svg, binding.source, binding.path || '', node.id, binding.target || '');
                 }
-                const x1 = from.position.x + 256;
-                const y1 = from.position.y + 64;
-                const x2 = to.position.x;
-                const y2 = to.position.y + 64;
-                const mid = Math.max(40, (x2 - x1) / 2);
-                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                path.setAttribute('d', `M ${x1} ${y1} C ${x1 + mid} ${y1}, ${x2 - mid} ${y2}, ${x2} ${y2}`);
-                path.setAttribute('fill', 'none');
-                path.setAttribute('stroke', 'var(--pipes-accent)');
-                path.setAttribute('stroke-width', '2');
-                svg.append(path);
             }
+            if (rendered) {
+                return;
+            }
+            for (const edge of state.graph.edges) {
+                rendered += renderNodeEdge(svg, edge.from, edge.to);
+            }
+        };
+
+        const renderBindingEdge = (svg, sourceId, sourcePath, targetId, targetName) => {
+            const sourcePort = findOutputPort(sourceId, sourcePath);
+            const targetPort = findInputPort(targetId, targetName);
+            if (!sourcePort || !targetPort) {
+                return renderNodeEdge(svg, sourceId, targetId, true);
+            }
+            drawEdge(svg, portPoint(sourcePort, 'output'), portPoint(targetPort, 'input'), true);
+            return 1;
+        };
+
+        const renderNodeEdge = (svg, fromId, toId, soft = false) => {
+            const from = nodeById(fromId);
+            const to = nodeById(toId);
+            if (!from || !to) {
+                return 0;
+            }
+            drawEdge(
+                svg,
+                { x: from.position.x + 288, y: from.position.y + 64 },
+                { x: to.position.x, y: to.position.y + 64 },
+                !soft
+            );
+            return 1;
+        };
+
+        const findInputPort = (nodeId, targetName) => {
+            return $(`.port[data-port-kind="input"][data-node-id="${selectorEscape(nodeId)}"][data-port-name="${selectorEscape(targetName)}"]`);
+        };
+
+        const findOutputPort = (nodeId, sourcePath) => {
+            return $(`.port[data-port-kind="output"][data-node-id="${selectorEscape(nodeId)}"][data-port-path="${selectorEscape(sourcePath)}"]`) ||
+                $(`.port[data-port-kind="output"][data-node-id="${selectorEscape(nodeId)}"]`);
+        };
+
+        const portPoint = (element, kind) => {
+            const graphRect = $('[data-graph]').getBoundingClientRect();
+            const rect = element.getBoundingClientRect();
+            return {
+                x: (kind === 'output' ? rect.right : rect.left) - graphRect.left,
+                y: rect.top + rect.height / 2 - graphRect.top
+            };
+        };
+
+        const drawEdge = (svg, from, to, strong) => {
+            const mid = Math.max(44, Math.abs(to.x - from.x) / 2);
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('d', `M ${from.x} ${from.y} C ${from.x + mid} ${from.y}, ${to.x - mid} ${to.y}, ${to.x} ${to.y}`);
+            path.setAttribute('fill', 'none');
+            path.setAttribute('stroke', strong ? 'var(--pipes-accent)' : 'color-mix(in srgb, var(--pipes-muted) 55%, transparent)');
+            path.setAttribute('stroke-width', strong ? '2.5' : '1.5');
+            svg.append(path);
         };
 
         const renderInspector = () => {

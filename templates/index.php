@@ -268,6 +268,31 @@
         .list-bindings > button {
             justify-self: start;
         }
+        .list-args {
+            border-top: 1px solid var(--pipes-border);
+            display: grid;
+            gap: 0.55rem;
+            margin-top: 0.75rem;
+            padding-top: 0.75rem;
+        }
+        .list-arg {
+            display: grid;
+            gap: 0.35rem;
+        }
+        .list-arg label {
+            color: var(--pipes-muted);
+            font-size: 0.78rem;
+            font-weight: 600;
+        }
+        .list-arg-bound {
+            border: 1px solid var(--pipes-border);
+            border-radius: var(--pipes-radius);
+            color: var(--pipes-muted);
+            padding: 0.55rem 0.65rem;
+        }
+        .list-arg textarea {
+            min-height: 4rem;
+        }
         .graph {
             position: relative;
             min-width: 46rem;
@@ -911,6 +936,35 @@
             };
         };
 
+        const formatArgValue = (value) => {
+            if (value === undefined || value === null) {
+                return '';
+            }
+            if (typeof value === 'object') {
+                return JSON.stringify(value, null, 2);
+            }
+            return String(value);
+        };
+
+        const parseArgValue = (prop, raw, checked = false) => {
+            if (prop.type.includes('boolean')) {
+                return checked;
+            }
+            if (raw === '') {
+                return undefined;
+            }
+            if (prop.type.includes('integer')) {
+                return Number.parseInt(raw, 10);
+            }
+            if (prop.type.includes('number')) {
+                return Number.parseFloat(raw);
+            }
+            if (prop.type.includes('array') || prop.type.includes('object')) {
+                return JSON.parse(raw);
+            }
+            return raw;
+        };
+
         const attachNodeDrag = (element, node) => {
             let drag = null;
             element.addEventListener('pointerdown', (event) => {
@@ -1333,6 +1387,7 @@
                         <button data-step-action="down">Down</button>
                         <button class="danger" data-step-action="remove">Remove</button>
                     </div>
+                    <div class="list-args" data-list-args></div>
                     <div class="binding-summary"></div>
                     <div class="list-bindings">
                         <div data-list-bindings></div>
@@ -1365,6 +1420,7 @@
                 } else {
                     summary.innerHTML = '<div class="notice">No input bindings.</div>';
                 }
+                renderListArgs(node, props, $('[data-list-args]', step));
                 renderBindings(node, props, $('[data-list-bindings]', step));
                 step.addEventListener('click', (event) => {
                     const action = event.target.closest('[data-step-action]')?.dataset.stepAction;
@@ -1692,6 +1748,75 @@
                     chips.append(chip);
                 }
                 container.append(section);
+            }
+        };
+
+        const renderListArgs = (node, props, container) => {
+            if (!container) {
+                return;
+            }
+            if (!props.length) {
+                container.innerHTML = '<div class="notice">No declared inputs.</div>';
+                return;
+            }
+
+            container.innerHTML = '<strong>Inputs</strong>';
+            node.args = node.args || {};
+            for (const prop of props) {
+                const binding = (node.bindings || []).find((candidate) => candidate.target === prop.name);
+                const row = document.createElement('div');
+                row.className = 'list-arg';
+                row.innerHTML = '<label></label>';
+                $('label', row).textContent = `${prop.name}${prop.required ? ' *' : ''}`;
+
+                if (binding) {
+                    const source = nodeById(binding.source);
+                    const bound = document.createElement('div');
+                    bound.className = 'list-arg-bound';
+                    bound.textContent = `Bound from ${source?.label || binding.source}.${binding.path || 'result'}`;
+                    row.append(bound);
+                    container.append(row);
+                    continue;
+                }
+
+                const value = node.args[prop.name];
+                const control = document.createElement(prop.type.includes('array') || prop.type.includes('object') ? 'textarea' : 'input');
+                control.dataset.listArg = prop.name;
+                if (prop.type.includes('boolean')) {
+                    control.type = 'checkbox';
+                    control.checked = !!value;
+                } else if (prop.type.includes('integer') || prop.type.includes('number')) {
+                    control.type = 'number';
+                    control.value = formatArgValue(value);
+                } else if (control.tagName !== 'TEXTAREA') {
+                    control.type = 'text';
+                    control.value = formatArgValue(value);
+                } else {
+                    control.value = formatArgValue(value);
+                    control.spellcheck = false;
+                }
+
+                control.addEventListener(prop.type.includes('boolean') ? 'change' : 'input', (event) => {
+                    try {
+                        const nextValue = parseArgValue(prop, event.target.value, event.target.checked);
+                        if (nextValue === undefined || Number.isNaN(nextValue)) {
+                            delete node.args[prop.name];
+                        } else {
+                            node.args[prop.name] = nextValue;
+                        }
+                        markDirty();
+                    } catch (error) {
+                        setStatus(`Invalid ${prop.name} value`, true);
+                    }
+                });
+                row.append(control);
+                if (prop.description) {
+                    const description = document.createElement('div');
+                    description.className = 'meta';
+                    description.textContent = prop.description;
+                    row.append(description);
+                }
+                container.append(row);
             }
         };
 

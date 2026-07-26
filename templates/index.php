@@ -1147,6 +1147,30 @@
             return answers;
         };
 
+        const flushListArgs = () => {
+            $$('[data-list-arg-node][data-list-arg]').forEach((control) => {
+                const node = nodeById(control.dataset.listArgNode);
+                const prop = {
+                    name: control.dataset.listArg,
+                    type: control.dataset.listArgType || 'string'
+                };
+                if (!node) {
+                    return;
+                }
+                node.args = node.args || {};
+                try {
+                    const nextValue = parseArgValue(prop, control.value, control.checked);
+                    if (nextValue === undefined || Number.isNaN(nextValue)) {
+                        delete node.args[prop.name];
+                    } else {
+                        node.args[prop.name] = nextValue;
+                    }
+                } catch (error) {
+                    // Leave the existing value in place; the visible control remains editable.
+                }
+            });
+        };
+
         const attachNodeDrag = (element, node) => {
             let drag = null;
             element.addEventListener('pointerdown', (event) => {
@@ -1284,6 +1308,7 @@
         };
 
         const savePipe = async () => {
+            flushListArgs();
             state.title = $('[data-title]').value.trim() || 'Untitled Pipe';
             const path = state.selectedPipeId ? `pipes/${state.selectedPipeId}` : 'pipes';
             const data = await request(path, {
@@ -1317,6 +1342,7 @@
 
         const runPipe = async () => {
             setStatus('Running...');
+            flushListArgs();
             const userAnswers = collectUserAnswers();
             try {
                 const data = await request('run', {
@@ -2129,6 +2155,9 @@
                         }
                         const pathInput = document.createElement('input');
                         pathInput.type = 'text';
+                        pathInput.dataset.listArgNode = node.id;
+                        pathInput.dataset.listArg = prop.name;
+                        pathInput.dataset.listArgType = prop.type;
                         pathInput.value = formatArgValue(node.args[prop.name]);
                         pathSelect.value = suggestions.includes(pathInput.value) ? pathInput.value : '';
                         pathSelect.addEventListener('change', (event) => {
@@ -2155,7 +2184,9 @@
 
                 const value = node.args[prop.name];
                 const control = document.createElement(prop.type.includes('array') || prop.type.includes('object') ? 'textarea' : 'input');
+                control.dataset.listArgNode = node.id;
                 control.dataset.listArg = prop.name;
+                control.dataset.listArgType = prop.type;
                 if (prop.type.includes('boolean')) {
                     control.type = 'checkbox';
                     control.checked = !!value;

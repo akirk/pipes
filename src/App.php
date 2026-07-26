@@ -19,6 +19,10 @@ class App extends BaseApp {
         ] );
 
         add_action( 'init', [ $this, 'register_post_types' ] );
+        add_action( 'wp_dashboard_setup', [ $this, 'register_dashboard_widgets' ] );
+        add_action( 'admin_bar_menu', [ $this, 'register_admin_bar_outputs' ], 120 );
+        add_action( 'admin_head', [ $this, 'output_styles' ] );
+        add_action( 'wp_head', [ $this, 'output_styles' ] );
         add_action( 'rest_api_init', [ $this, 'register_rest_routes' ] );
         add_action( 'wp_abilities_api_categories_init', [ $this, 'register_ability_category' ] );
         add_action( 'wp_abilities_api_init', [ $this, 'register_abilities' ] );
@@ -660,6 +664,100 @@ class App extends BaseApp {
         ];
     }
 
+    public function register_dashboard_widgets(): void {
+        if ( ! function_exists( 'wp_add_dashboard_widget' ) ) {
+            return;
+        }
+
+        foreach ( $this->get_output_pipes( 'dashboard' ) as $post ) {
+            wp_add_dashboard_widget(
+                'pipes_output_' . $post->ID,
+                sprintf( __( 'Pipe: %s', 'pipes' ), $post->post_title ),
+                [ $this, 'render_dashboard_output_widget' ],
+                null,
+                [ 'post_id' => $post->ID ]
+            );
+        }
+    }
+
+    public function render_dashboard_output_widget( $post, array $args = [] ): void {
+        $post_id = isset( $args['args']['post_id'] ) ? (int) $args['args']['post_id'] : 0;
+        $pipe    = get_post( $post_id );
+        if ( ! $pipe || self::POST_TYPE !== $pipe->post_type ) {
+            echo '<p>' . esc_html__( 'Pipe not found.', 'pipes' ) . '</p>';
+            return;
+        }
+
+        echo '<div class="pipes-output pipes-output-dashboard">';
+        echo $this->render_pipe_output_html( $pipe, 'dashboard' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+        echo '</div>';
+    }
+
+    public function register_admin_bar_outputs( $wp_admin_bar ): void {
+        if ( ! is_user_logged_in() || ! is_admin_bar_showing() ) {
+            return;
+        }
+
+        $menu_pipes  = $this->get_output_pipes( 'masterbar_menu' );
+        $graph_pipes = $this->get_output_pipes( 'masterbar_graph' );
+
+        if ( [] === $menu_pipes && [] === $graph_pipes ) {
+            return;
+        }
+
+        $wp_admin_bar->add_node( [
+            'id'    => 'pipes-outputs',
+            'title' => esc_html__( 'Pipes', 'pipes' ),
+            'href'  => home_url( '/pipes/' ),
+        ] );
+
+        foreach ( $graph_pipes as $pipe ) {
+            $settings = $this->get_output_settings( $pipe, 'masterbar_graph' );
+            $value    = $this->get_pipe_output_value( $pipe, $settings['path'] );
+            $wp_admin_bar->add_node( [
+                'id'     => 'pipes-graph-' . $pipe->ID,
+                'parent' => 'pipes-outputs',
+                'title'  => $this->render_sparkline_title( $pipe->post_title, $value ),
+                'href'   => home_url( '/pipes/' ),
+                'meta'   => [
+                    'class' => 'pipes-masterbar-graph',
+                ],
+            ] );
+        }
+
+        foreach ( $menu_pipes as $pipe ) {
+            $wp_admin_bar->add_node( [
+                'id'     => 'pipes-menu-' . $pipe->ID,
+                'parent' => 'pipes-outputs',
+                'title'  => esc_html( $pipe->post_title ),
+                'href'   => home_url( '/pipes/' ),
+            ] );
+
+            foreach ( $this->get_masterbar_menu_items( $pipe ) as $index => $item ) {
+                $wp_admin_bar->add_node( [
+                    'id'     => 'pipes-menu-' . $pipe->ID . '-' . $index,
+                    'parent' => 'pipes-menu-' . $pipe->ID,
+                    'title'  => esc_html( $item ),
+                    'href'   => home_url( '/pipes/' ),
+                ] );
+            }
+        }
+    }
+
+    public function output_styles(): void {
+        if ( ! is_user_logged_in() ) {
+            return;
+        }
+        ?>
+        <style>
+            .pipes-output table { width: 100%; border-collapse: collapse; }
+            .pipes-output th, .pipes-output td { border-bottom: 1px solid #dcdcde; padding: 6px 8px; text-align: left; vertical-align: top; }
+            .pipes-output ul { margin: 0 0 0 1.2em; }
+            #wpadminbar .pipes-masterbar-graph svg { display: inline-block; margin-left: 6px; vertical-align: middle; }
+        </style>
+        <?php
+    }
+
     public function register_ai_assistant_ability_domains( array $domains ): array {
         $domains['pipes'] = 'pipes, workflows, flows, yahoo pipes, connect abilities, ability pipeline, automation';
         return $domains;
@@ -703,6 +801,224 @@ class App extends BaseApp {
                 ],
             ],
         ];
+    }
+
+    private function get_output_pipes( string $output_key ): array {
+        if ( ! is_user_logged_in() ) {
+            return [];
+        }
+
+        $query = new \WP_Query( [
+            'post_type'      => self::POST_TYPE,
+            'post_status'    => [ 'publish', 'draft', 'private' ],
+            'posts_per_page' => 50,
+            'orderby'        => 'title',
+            'order'          => 'ASC',
+            'author'         => get_current_user_id(),
+        ] );
+
+        $pipes = [];
+        foreach ( $query->posts as $post ) {
+            $settings = $this->get_output_settings( $post, $output_key );
+            if ( ! empty( $settings['enabled'] ) ) {
+                $pipes[] = $post;
+            }
+        }
+
+        return $pipes;
+    }
+
+    private function get_output_settings( \WP_Post $post, string $output_key ): array {
+        $graph = $this->get_pipe_graph( $post );
+        $outputs = $graph['outputs'] ?? [];
+        return is_array( $outputs[ $output_key ] ?? null ) ? $outputs[ $output_key ] : [ 'enabled' => false, 'path' => '' ];
+    }
+
+    private function get_pipe_output_value( \WP_Post $post, string $path = '' ) {
+        $run = $this->get_cached_pipe_run( $post );
+        if ( is_wp_error( $run ) ) {
+            return $run;
+        }
+
+        if ( '' !== trim( $path ) ) {
+            return $this->get_path_value( $run, $path );
+        }
+
+        $results = isset( $run['results'] ) && is_array( $run['results'] ) ? $run['results'] : [];
+        if ( [] === $results ) {
+            return $run;
+        }
+
+        $last = end( $results );
+        return is_array( $last ) && array_key_exists( 'result', $last ) ? $last['result'] : $last;
+    }
+
+    private function get_cached_pipe_run( \WP_Post $post ) {
+        $cache_key = 'pipes_output_' . get_current_user_id() . '_' . $post->ID . '_' . md5( $post->post_modified_gmt );
+        $cached    = get_transient( $cache_key );
+        if ( false !== $cached ) {
+            return $cached;
+        }
+
+        $result = $this->run_graph( $this->get_pipe_graph( $post ), false );
+        set_transient( $cache_key, $result, 5 * MINUTE_IN_SECONDS );
+
+        return $result;
+    }
+
+    private function render_pipe_output_html( \WP_Post $post, string $output_key ): string {
+        $settings = $this->get_output_settings( $post, $output_key );
+        $value    = $this->get_pipe_output_value( $post, $settings['path'] );
+
+        if ( is_wp_error( $value ) ) {
+            return '<p>' . esc_html( $value->get_error_message() ) . '</p>';
+        }
+
+        return $this->render_value_html( $value );
+    }
+
+    private function render_value_html( $value ): string {
+        if ( null === $value ) {
+            return '<p><em>' . esc_html__( 'No output.', 'pipes' ) . '</em></p>';
+        }
+
+        if ( is_scalar( $value ) ) {
+            return '<p>' . esc_html( (string) $value ) . '</p>';
+        }
+
+        if ( is_array( $value ) && $this->is_list_array( $value ) ) {
+            if ( [] === $value ) {
+                return '<p><em>' . esc_html__( 'No items.', 'pipes' ) . '</em></p>';
+            }
+
+            $first = reset( $value );
+            if ( is_array( $first ) ) {
+                $columns = array_slice( array_keys( $first ), 0, 6 );
+                $html = '<table><thead><tr>';
+                foreach ( $columns as $column ) {
+                    $html .= '<th>' . esc_html( (string) $column ) . '</th>';
+                }
+                $html .= '</tr></thead><tbody>';
+                foreach ( array_slice( $value, 0, 10 ) as $row ) {
+                    $html .= '<tr>';
+                    foreach ( $columns as $column ) {
+                        $html .= '<td>' . esc_html( $this->stringify_glue_value( $row[ $column ] ?? '' ) ) . '</td>';
+                    }
+                    $html .= '</tr>';
+                }
+                $html .= '</tbody></table>';
+                return $html;
+            }
+
+            $html = '<ul>';
+            foreach ( array_slice( $value, 0, 10 ) as $item ) {
+                $html .= '<li>' . esc_html( $this->stringify_glue_value( $item ) ) . '</li>';
+            }
+            $html .= '</ul>';
+            return $html;
+        }
+
+        if ( is_array( $value ) ) {
+            $html = '<table><tbody>';
+            foreach ( array_slice( $value, 0, 12, true ) as $key => $item ) {
+                $html .= '<tr><th>' . esc_html( (string) $key ) . '</th><td>' . esc_html( $this->stringify_glue_value( $item ) ) . '</td></tr>';
+            }
+            $html .= '</tbody></table>';
+            return $html;
+        }
+
+        return '<pre>' . esc_html( $this->stringify_glue_value( $value ) ) . '</pre>';
+    }
+
+    private function get_masterbar_menu_items( \WP_Post $post ): array {
+        $settings = $this->get_output_settings( $post, 'masterbar_menu' );
+        $value    = $this->get_pipe_output_value( $post, $settings['path'] );
+        if ( is_wp_error( $value ) ) {
+            return [ $value->get_error_message() ];
+        }
+
+        if ( is_array( $value ) && isset( $value['items'] ) && is_array( $value['items'] ) ) {
+            $value = $value['items'];
+        }
+
+        if ( is_array( $value ) && $this->is_list_array( $value ) ) {
+            $items = [];
+            foreach ( array_slice( $value, 0, 8 ) as $item ) {
+                if ( is_array( $item ) ) {
+                    $items[] = (string) ( $item['title'] ?? $item['name'] ?? $item['label'] ?? $this->stringify_glue_value( $item ) );
+                } else {
+                    $items[] = $this->stringify_glue_value( $item );
+                }
+            }
+            return $items;
+        }
+
+        return [ $this->stringify_glue_value( $value ) ];
+    }
+
+    private function render_sparkline_title( string $title, $value ): string {
+        $numbers = $this->extract_numbers( $value );
+        if ( count( $numbers ) < 2 ) {
+            return esc_html( $title );
+        }
+
+        $width = 74;
+        $height = 20;
+        $min = min( $numbers );
+        $max = max( $numbers );
+        $range = max( 1, $max - $min );
+        $points = [];
+        foreach ( array_values( $numbers ) as $index => $number ) {
+            $x = count( $numbers ) > 1 ? ( $index / ( count( $numbers ) - 1 ) ) * $width : 0;
+            $y = $height - ( ( $number - $min ) / $range ) * $height;
+            $points[] = round( $x, 1 ) . ',' . round( $y, 1 );
+        }
+
+        $svg = '<svg width="' . esc_attr( (string) $width ) . '" height="' . esc_attr( (string) $height ) . '" viewBox="0 0 ' . esc_attr( (string) $width ) . ' ' . esc_attr( (string) $height ) . '" aria-hidden="true"><polyline fill="none" stroke="currentColor" stroke-width="2" points="' . esc_attr( implode( ' ', $points ) ) . '"/></svg>';
+
+        return esc_html( $title ) . ' ' . $svg;
+    }
+
+    private function extract_numbers( $value ): array {
+        if ( is_wp_error( $value ) ) {
+            return [];
+        }
+
+        if ( is_numeric( $value ) ) {
+            return [ (float) $value ];
+        }
+
+        if ( is_array( $value ) && isset( $value['values'] ) && is_array( $value['values'] ) ) {
+            $value = $value['values'];
+        }
+
+        if ( ! is_array( $value ) ) {
+            return [];
+        }
+
+        $numbers = [];
+        foreach ( $value as $item ) {
+            if ( is_numeric( $item ) ) {
+                $numbers[] = (float) $item;
+            } elseif ( is_array( $item ) ) {
+                foreach ( $item as $candidate ) {
+                    if ( is_numeric( $candidate ) ) {
+                        $numbers[] = (float) $candidate;
+                        break;
+                    }
+                }
+            }
+        }
+
+        return array_slice( $numbers, 0, 24 );
+    }
+
+    private function is_list_array( array $value ): bool {
+        if ( [] === $value ) {
+            return true;
+        }
+
+        return array_keys( $value ) === range( 0, count( $value ) - 1 );
     }
 
     private function get_pipe_post( int $post_id ) {
@@ -770,9 +1086,25 @@ class App extends BaseApp {
         }
 
         return [
-            'nodes' => $nodes,
-            'edges' => $edges,
+            'nodes'   => $nodes,
+            'edges'   => $edges,
+            'outputs' => $this->sanitize_outputs( $graph['outputs'] ?? [] ),
         ];
+    }
+
+    private function sanitize_outputs( $outputs ): array {
+        $outputs = is_array( $outputs ) ? $outputs : [];
+        $clean   = [];
+
+        foreach ( [ 'dashboard', 'masterbar_menu', 'masterbar_graph' ] as $key ) {
+            $settings = isset( $outputs[ $key ] ) && is_array( $outputs[ $key ] ) ? $outputs[ $key ] : [];
+            $clean[ $key ] = [
+                'enabled' => ! empty( $settings['enabled'] ),
+                'path'    => sanitize_text_field( (string) ( $settings['path'] ?? '' ) ),
+            ];
+        }
+
+        return $clean;
     }
 
     private function sanitize_bindings( $bindings ): array {

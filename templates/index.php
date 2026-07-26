@@ -113,6 +113,20 @@
             justify-content: flex-end;
             flex-wrap: wrap;
         }
+        .mode-toggle {
+            display: inline-flex;
+            border: 1px solid var(--pipes-border);
+            border-radius: var(--pipes-radius);
+            overflow: hidden;
+        }
+        .mode-toggle button {
+            border: 0;
+            border-radius: 0;
+        }
+        .mode-toggle button.active {
+            background: var(--pipes-accent);
+            color: #fff;
+        }
         .brand {
             font-size: 1.35rem;
             font-weight: 700;
@@ -179,6 +193,67 @@
                 linear-gradient(90deg, var(--pipes-border) 1px, transparent 1px);
             background-size: 36px 36px;
             background-color: color-mix(in srgb, var(--pipes-bg) 88%, var(--pipes-surface));
+        }
+        .list-builder {
+            display: none;
+            overflow: auto;
+            padding: 1rem;
+            background: color-mix(in srgb, var(--pipes-bg) 88%, var(--pipes-surface));
+        }
+        .builder-list .canvas {
+            display: none;
+        }
+        .builder-list .list-builder {
+            display: block;
+        }
+        .flow-list {
+            display: grid;
+            gap: 0.75rem;
+            max-width: 900px;
+        }
+        .flow-step {
+            border: 1px solid var(--pipes-border);
+            border-radius: var(--pipes-radius);
+            background: var(--pipes-surface);
+            padding: 0.85rem;
+        }
+        .flow-step.active {
+            border-color: var(--pipes-accent);
+            box-shadow: inset 4px 0 0 var(--pipes-accent);
+        }
+        .flow-step-header {
+            align-items: start;
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr) auto;
+            gap: 0.65rem;
+        }
+        .flow-step-number {
+            align-items: center;
+            background: var(--pipes-surface-alt);
+            border-radius: 999px;
+            display: inline-flex;
+            font-weight: 700;
+            height: 1.8rem;
+            justify-content: center;
+            width: 1.8rem;
+        }
+        .flow-step h2 {
+            font-size: 0.95rem;
+            margin: 0 0 0.2rem;
+        }
+        .flow-step-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem;
+            justify-content: flex-end;
+        }
+        .flow-step-actions button {
+            padding: 0.35rem 0.5rem;
+        }
+        .binding-summary {
+            display: grid;
+            gap: 0.35rem;
+            margin-top: 0.7rem;
         }
         .graph {
             position: relative;
@@ -405,6 +480,21 @@
             margin-bottom: 0.55rem;
         }
         .binding .wide { grid-column: 1 / -1; }
+        .output-setting {
+            border: 1px solid var(--pipes-border);
+            border-radius: var(--pipes-radius);
+            margin-bottom: 0.55rem;
+            padding: 0.65rem;
+        }
+        .output-setting label {
+            align-items: center;
+            color: var(--pipes-text);
+            display: flex;
+            font-size: 0.88rem;
+            font-weight: 600;
+            gap: 0.45rem;
+            margin-bottom: 0.45rem;
+        }
         .notice {
             color: var(--pipes-muted);
             font-size: 0.86rem;
@@ -534,11 +624,17 @@
                     <span class="notice" data-status>Not saved</span>
                 </div>
                 <div class="actions">
+                    <div class="mode-toggle" aria-label="Builder mode">
+                        <button data-builder-mode="visual">Visual</button>
+                        <button data-builder-mode="list">List</button>
+                    </div>
                     <button data-action="save">Save</button>
                     <button data-action="run">Run</button>
                     <button class="danger" data-action="delete">Delete</button>
                 </div>
             </div>
+
+            <section class="list-builder" data-list-builder></section>
 
             <section class="canvas">
                 <div class="graph" data-graph>
@@ -576,6 +672,7 @@
             graph: { nodes: [], edges: [] },
             lastRunResults: {},
             activeBindingTarget: '',
+            builderMode: window.matchMedia('(max-width: 760px)').matches ? 'list' : 'visual',
             dirty: false
         };
 
@@ -615,10 +712,42 @@
             setStatus('Unsaved changes');
         };
 
+        const setBuilderMode = (mode) => {
+            state.builderMode = mode === 'list' ? 'list' : 'visual';
+            renderBuilderMode();
+        };
+
+        const renderBuilderMode = () => {
+            $('.workspace').classList.toggle('builder-list', state.builderMode === 'list');
+            $$('[data-builder-mode]').forEach((button) => {
+                button.classList.toggle('active', button.dataset.builderMode === state.builderMode);
+            });
+        };
+
         const abilityById = (id) => state.abilities.find((ability) => ability.id === id);
         const nodeById = (id) => state.graph.nodes.find((node) => node.id === id);
 
         const selectedNode = () => nodeById(state.selectedNodeId);
+
+        const defaultOutputs = () => ({
+            dashboard: { enabled: false, path: '' },
+            masterbar_menu: { enabled: false, path: '' },
+            masterbar_graph: { enabled: false, path: '' }
+        });
+
+        const ensureOutputs = () => {
+            state.graph.outputs = {
+                ...defaultOutputs(),
+                ...(state.graph.outputs || {})
+            };
+            for (const key of Object.keys(defaultOutputs())) {
+                state.graph.outputs[key] = {
+                    ...defaultOutputs()[key],
+                    ...(state.graph.outputs[key] || {})
+                };
+            }
+            return state.graph.outputs;
+        };
 
         const schemaProperties = (schema) => {
             if (!schema || !schema.properties || typeof schema.properties !== 'object') {
@@ -844,7 +973,7 @@
             state.selectedPipeId = null;
             state.selectedNodeId = null;
             state.title = 'Untitled Pipe';
-            state.graph = { nodes: [], edges: [] };
+            state.graph = { nodes: [], edges: [], outputs: defaultOutputs() };
             state.lastRunResults = {};
             state.activeBindingTarget = '';
             state.dirty = false;
@@ -861,6 +990,7 @@
             state.selectedNodeId = data.pipe.graph?.nodes?.[0]?.id || null;
             state.title = data.pipe.title || example.title || 'Untitled Pipe';
             state.graph = data.pipe.graph || { nodes: [], edges: [] };
+            ensureOutputs();
             state.lastRunResults = {};
             state.activeBindingTarget = '';
             state.dirty = false;
@@ -877,6 +1007,7 @@
             state.selectedPipeId = data.pipe.id;
             state.title = data.pipe.title;
             state.graph = data.pipe.graph || { nodes: [], edges: [] };
+            ensureOutputs();
             state.selectedNodeId = state.graph.nodes[0]?.id || null;
             state.lastRunResults = {};
             state.activeBindingTarget = '';
@@ -897,6 +1028,7 @@
             state.selectedPipeId = data.pipe.id;
             state.title = data.pipe.title;
             state.graph = data.pipe.graph;
+            ensureOutputs();
             state.dirty = false;
             $('[data-title]').value = state.title;
             setStatus('Saved');
@@ -1149,6 +1281,109 @@
             renderEdges();
         };
 
+        const renderListBuilder = () => {
+            const container = $('[data-list-builder]');
+            if (!state.graph.nodes.length) {
+                container.innerHTML = '<div class="empty">Add abilities from the ability tray to build a flow.</div>';
+                return;
+            }
+
+            container.innerHTML = '<div class="flow-list" data-flow-list></div>';
+            const list = $('[data-flow-list]', container);
+            state.graph.nodes.forEach((node, index) => {
+                const ability = abilityById(node.ability_id);
+                const step = document.createElement('article');
+                step.className = `flow-step ${node.id === state.selectedNodeId ? 'active' : ''}`;
+                step.innerHTML = `
+                    <div class="flow-step-header">
+                        <div class="flow-step-number"></div>
+                        <div>
+                            <h2></h2>
+                            <div class="meta"></div>
+                            <div class="badge-row"></div>
+                        </div>
+                        <div class="flow-step-actions">
+                            <button data-step-action="configure">Configure</button>
+                            <button data-step-action="up">Up</button>
+                            <button data-step-action="down">Down</button>
+                            <button class="danger" data-step-action="remove">Remove</button>
+                        </div>
+                    </div>
+                    <div class="binding-summary"></div>
+                `;
+                $('.flow-step-number', step).textContent = String(index + 1);
+                $('h2', step).textContent = node.label || ability?.label || node.ability_id;
+                $('.meta', step).textContent = node.ability_id;
+                const badges = $('.badge-row', step);
+                if (ability?.category) {
+                    badges.append(badge(ability.category));
+                }
+                if ((node.bindings || []).length) {
+                    badges.append(badge(`${node.bindings.length} bindings`));
+                }
+                if (state.lastRunResults[node.id]) {
+                    badges.append(badge('has output'));
+                }
+                const summary = $('.binding-summary', step);
+                if ((node.bindings || []).length) {
+                    for (const binding of node.bindings) {
+                        const source = nodeById(binding.source);
+                        const line = document.createElement('div');
+                        line.className = 'meta';
+                        line.textContent = `${source?.label || binding.source}.${binding.path || 'result'} -> ${binding.target}`;
+                        summary.append(line);
+                    }
+                } else {
+                    summary.innerHTML = '<div class="notice">No input bindings.</div>';
+                }
+                step.addEventListener('click', (event) => {
+                    const action = event.target.closest('[data-step-action]')?.dataset.stepAction;
+                    if (!action) {
+                        state.selectedNodeId = node.id;
+                        render();
+                        return;
+                    }
+                    if (action === 'configure') {
+                        state.selectedNodeId = node.id;
+                    } else if (action === 'up') {
+                        moveNode(index, -1);
+                    } else if (action === 'down') {
+                        moveNode(index, 1);
+                    } else if (action === 'remove') {
+                        removeNode(node.id);
+                    }
+                    render();
+                });
+                list.append(step);
+            });
+        };
+
+        const moveNode = (index, direction) => {
+            const target = index + direction;
+            if (target < 0 || target >= state.graph.nodes.length) {
+                return;
+            }
+            const nodes = state.graph.nodes;
+            [nodes[index], nodes[target]] = [nodes[target], nodes[index]];
+            nodes.forEach((node, nextIndex) => {
+                node.position = window.matchMedia('(max-width: 760px)').matches ?
+                    { x: 36, y: 42 + nextIndex * 245 } :
+                    { ...node.position, x: 28 + nextIndex * 320 };
+            });
+            syncEdgesFromBindings();
+            markDirty();
+        };
+
+        const removeNode = (nodeId) => {
+            state.graph.nodes = state.graph.nodes.filter((candidate) => candidate.id !== nodeId);
+            state.graph.edges = state.graph.edges.filter((edge) => edge.from !== nodeId && edge.to !== nodeId);
+            for (const node of state.graph.nodes) {
+                node.bindings = (node.bindings || []).filter((binding) => binding.source !== nodeId);
+            }
+            state.selectedNodeId = state.graph.nodes[0]?.id || null;
+            markDirty();
+        };
+
         const renderEdges = () => {
             const svg = $('[data-edges]');
             svg.innerHTML = '';
@@ -1287,13 +1522,18 @@
             const inspector = $('[data-inspector]');
             const node = nodeById(state.selectedNodeId);
             if (!node) {
-                inspector.innerHTML = '<div class="empty">Select a node to configure inputs and bindings.</div>';
+                inspector.innerHTML = `
+                    <div data-output-settings></div>
+                    <div class="empty">Select a node to configure inputs and bindings.</div>
+                `;
+                renderOutputSettings();
                 return;
             }
             const ability = abilityById(node.ability_id);
             const props = schemaProperties(ability?.input_schema);
             const activeTarget = ensureActiveBindingTarget(node, props);
             inspector.innerHTML = `
+                <div data-output-settings></div>
                 <div class="field">
                     <label>Node label</label>
                     <input type="text" data-node-label>
@@ -1321,6 +1561,7 @@
                 </div>
                 <button class="danger" data-action="remove-node">Remove Node</button>
             `;
+            renderOutputSettings();
             $('[data-node-label]', inspector).value = node.label || ability?.label || node.ability_id;
             $('[data-node-args]', inspector).value = JSON.stringify(node.args || {}, null, 2);
 
@@ -1368,15 +1609,54 @@
                 renderInspector();
             });
             $('[data-action="remove-node"]', inspector).addEventListener('click', () => {
-                state.graph.nodes = state.graph.nodes.filter((candidate) => candidate.id !== node.id);
-                state.graph.edges = state.graph.edges.filter((edge) => edge.from !== node.id && edge.to !== node.id);
-                state.selectedNodeId = state.graph.nodes[0]?.id || null;
-                markDirty();
+                removeNode(node.id);
                 render();
             });
 
             renderOutputPaths(node);
             renderBindings(node, props);
+        };
+
+        const renderOutputSettings = () => {
+            const container = $('[data-output-settings]');
+            if (!container) {
+                return;
+            }
+            const outputs = ensureOutputs();
+            const labels = {
+                dashboard: 'Dashboard widget',
+                masterbar_menu: 'Masterbar dropdown',
+                masterbar_graph: 'Masterbar line graph'
+            };
+            container.innerHTML = `
+                <div class="schema">
+                    <h3>Pipe Outputs</h3>
+                    <div class="notice">Empty paths show the final node result. Use a dot path to show a specific value.</div>
+                    <div data-output-settings-list></div>
+                </div>
+            `;
+            const list = $('[data-output-settings-list]', container);
+            for (const key of Object.keys(labels)) {
+                const settings = outputs[key];
+                const item = document.createElement('div');
+                item.className = 'output-setting';
+                item.innerHTML = `
+                    <label><input type="checkbox" data-output-enabled> <span></span></label>
+                    <input type="text" data-output-path placeholder="Optional output path">
+                `;
+                $('span', item).textContent = labels[key];
+                $('[data-output-enabled]', item).checked = !!settings.enabled;
+                $('[data-output-path]', item).value = settings.path || '';
+                $('[data-output-enabled]', item).addEventListener('change', (event) => {
+                    outputs[key].enabled = event.target.checked;
+                    markDirty();
+                });
+                $('[data-output-path]', item).addEventListener('input', (event) => {
+                    outputs[key].path = event.target.value;
+                    markDirty();
+                });
+                list.append(item);
+            }
         };
 
         const renderOutputPaths = (node) => {
@@ -1511,7 +1791,9 @@
             renderPipes();
             renderExamples();
             renderAbilities();
+            renderBuilderMode();
             renderGraph();
+            renderListBuilder();
             renderInspector();
         };
 
@@ -1527,6 +1809,9 @@
         $('[data-action="save"]').addEventListener('click', () => savePipe().catch((error) => setStatus(error.message, true)));
         $('[data-action="delete"]').addEventListener('click', () => deletePipe().catch((error) => setStatus(error.message, true)));
         $('[data-action="run"]').addEventListener('click', () => runPipe().catch((error) => setStatus(error.message, true)));
+        $$('[data-builder-mode]').forEach((button) => {
+            button.addEventListener('click', () => setBuilderMode(button.dataset.builderMode));
+        });
 
         Promise.all([loadPipes(), loadAbilities(), loadExamples()])
             .then(render)

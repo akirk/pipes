@@ -789,6 +789,34 @@
             }));
         };
 
+        const valueType = (value) => {
+            if (Array.isArray(value)) {
+                return 'array';
+            }
+            if (value === null) {
+                return 'null';
+            }
+            if (Number.isInteger(value)) {
+                return 'integer';
+            }
+            return typeof value;
+        };
+
+        const typeList = (type) => String(type || 'any').split('|').filter(Boolean);
+
+        const typesCompatible = (inputType, outputType) => {
+            const inputTypes = typeList(inputType);
+            const outputTypes = typeList(outputType);
+            if (!inputTypes.length || inputTypes.includes('any') || !outputTypes.length || outputTypes.includes('any')) {
+                return true;
+            }
+            return inputTypes.some((input) => outputTypes.some((output) => (
+                input === output ||
+                (input === 'number' && output === 'integer') ||
+                (input === 'object' && output === 'array')
+            )));
+        };
+
         const inputPortsForNode = (node) => {
             const ability = abilityById(node.ability_id);
             const props = schemaProperties(ability?.input_schema);
@@ -813,19 +841,20 @@
                     .map((item) => ({
                         path: item.path,
                         label: item.path,
-                        value: formatPathValue(item.value)
+                        value: formatPathValue(item.value),
+                        type: valueType(item.value)
                     }));
             } else {
                 const ability = abilityById(node.ability_id);
                 const props = schemaProperties(ability?.output_schema);
                 ports = props.length ?
-                    props.slice(0, 6).map((prop) => ({ path: prop.name, label: prop.name, value: prop.type })) :
-                    [{ path: '', label: 'result', value: '' }];
+                    props.slice(0, 6).map((prop) => ({ path: prop.name, label: prop.name, value: prop.type, type: prop.type })) :
+                    [{ path: '', label: 'result', value: '', type: 'any' }];
             }
             for (const targetNode of state.graph.nodes) {
                 for (const binding of targetNode.bindings || []) {
                     if (binding.source === node.id && !ports.some((port) => port.path === (binding.path || ''))) {
-                        ports.push({ path: binding.path || '', label: binding.path || 'result', value: 'bound' });
+                        ports.push({ path: binding.path || '', label: binding.path || 'result', value: 'bound', type: 'any' });
                     }
                 }
             }
@@ -857,6 +886,14 @@
                 nodeHasOutput(candidate)
             ));
         };
+
+        const compatibleOutputPortsFor = (source, inputProp) => (
+            outputPortsForNode(source).filter((port) => typesCompatible(inputProp?.type || 'any', port.type || 'any'))
+        );
+
+        const compatibleBindingSourceNodesFor = (node, inputProp) => (
+            bindingSourceNodesFor(node).filter((source) => compatibleOutputPortsFor(source, inputProp).length)
+        );
 
         const defaultArgsForAbility = (ability) => {
             const args = {};
@@ -1714,11 +1751,14 @@
 
         const renderOutputPaths = (node) => {
             const container = $('[data-output-paths]');
-            const sourceNodes = bindingSourceNodesFor(node);
+            const inputProp = schemaProperties(abilityById(node.ability_id)?.input_schema)
+                .find((prop) => prop.name === state.activeBindingTarget);
+            const sourceNodes = compatibleBindingSourceNodesFor(node, inputProp);
             const panels = [];
             for (const source of sourceNodes) {
                 const runResult = state.lastRunResults[source.id]?.result;
-                const paths = runResult === undefined ? [] : flattenPaths(runResult);
+                const paths = runResult === undefined ? [] : flattenPaths(runResult)
+                    .filter((item) => typesCompatible(inputProp?.type || 'any', valueType(item.value)));
                 panels.push({ source, paths });
             }
 
@@ -1768,7 +1808,7 @@
             node.args = node.args || {};
             for (const prop of props) {
                 const binding = (node.bindings || []).find((candidate) => candidate.target === prop.name);
-                const sourceNodes = bindingSourceNodesFor(node);
+                const sourceNodes = compatibleBindingSourceNodesFor(node, prop);
                 const row = document.createElement('div');
                 row.className = 'list-arg';
                 row.innerHTML = '<label></label>';
@@ -1797,7 +1837,7 @@
                         return;
                     }
 
-                    const sourcePorts = outputPortsForNode(nodeById(event.target.value) || {});
+                    const sourcePorts = compatibleOutputPortsFor(nodeById(event.target.value) || {}, prop);
                     const nextBinding = existing || { target: prop.name, source: event.target.value, path: sourcePorts[0]?.path || '' };
                     nextBinding.source = event.target.value;
                     nextBinding.path = sourcePorts.some((port) => port.path === nextBinding.path) ? nextBinding.path : (sourcePorts[0]?.path || '');
@@ -1814,9 +1854,9 @@
                 if (binding) {
                     const source = nodeById(binding.source);
                     const pathSelect = document.createElement('select');
-                    const ports = source ? outputPortsForNode(source) : [];
+                    const ports = source ? compatibleOutputPortsFor(source, prop) : [];
                     if (!ports.some((port) => port.path === (binding.path || ''))) {
-                        ports.unshift({ path: binding.path || '', label: binding.path || 'result', value: 'bound' });
+                        ports.unshift({ path: binding.path || '', label: binding.path || 'result', value: 'bound', type: 'any' });
                     }
                     for (const port of ports) {
                         const option = document.createElement('option');
@@ -1881,7 +1921,6 @@
             if (!container) {
                 return;
             }
-            const sourceNodes = bindingSourceNodesFor(node);
             node.bindings = node.bindings || [];
             if (!node.bindings.length) {
                 container.innerHTML = '<div class="notice">No bindings. Base args are passed directly.</div>';
@@ -1889,6 +1928,8 @@
             }
             container.innerHTML = '';
             node.bindings.forEach((binding, index) => {
+                const targetProp = props.find((prop) => prop.name === (binding.target || props[0]?.name || ''));
+                const sourceNodes = targetProp ? compatibleBindingSourceNodesFor(node, targetProp) : bindingSourceNodesFor(node);
                 const element = document.createElement('div');
                 element.className = 'binding';
                 element.innerHTML = `

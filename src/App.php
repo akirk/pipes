@@ -61,6 +61,12 @@ class App extends BaseApp {
             'permission_callback' => [ $this, 'can_use_app' ],
         ] );
 
+        register_rest_route( self::REST_NAMESPACE, '/examples', [
+            'methods'             => 'GET',
+            'callback'            => [ $this, 'rest_get_examples' ],
+            'permission_callback' => [ $this, 'can_use_app' ],
+        ] );
+
         register_rest_route( self::REST_NAMESPACE, '/pipes', [
             [
                 'methods'             => 'GET',
@@ -192,6 +198,37 @@ class App extends BaseApp {
         } );
 
         return rest_ensure_response( [ 'abilities' => $abilities ] );
+    }
+
+    public function rest_get_examples() {
+        if ( ! function_exists( 'wp_get_abilities' ) ) {
+            return rest_ensure_response( [ 'examples' => [] ] );
+        }
+
+        $registered = [];
+        foreach ( wp_get_abilities() as $id => $ability ) {
+            $registered[ (string) $id ] = true;
+            $registered[ $this->get_ability_id( $id, $ability ) ] = true;
+        }
+        $examples = [];
+
+        foreach ( $this->get_starter_pipes() as $example ) {
+            $missing = [];
+            foreach ( $example['requires'] as $ability_id ) {
+                if ( empty( $registered[ $ability_id ] ) ) {
+                    $missing[] = $ability_id;
+                }
+            }
+
+            if ( [] !== $missing ) {
+                continue;
+            }
+
+            unset( $example['requires'] );
+            $examples[] = $example;
+        }
+
+        return rest_ensure_response( [ 'examples' => $examples ] );
     }
 
     public function rest_list_pipes() {
@@ -651,6 +688,163 @@ class App extends BaseApp {
         }
 
         return [];
+    }
+
+    private function get_starter_pipes(): array {
+        return [
+            [
+                'id'          => 'wordopedia-research-brief',
+                'title'       => __( 'Wordopedia Research Brief', 'pipes' ),
+                'description' => __( 'Search Wikipedia, fetch the top article, and list media for that article.', 'pipes' ),
+                'requires'    => [ 'wordopedia/search-wikipedia', 'wordopedia/get-article', 'wordopedia/list-article-media' ],
+                'graph'       => [
+                    'nodes' => [
+                        [
+                            'id'         => 'search',
+                            'ability_id' => 'wordopedia/search-wikipedia',
+                            'label'      => __( 'Search topic', 'pipes' ),
+                            'args'       => [
+                                'query'    => 'WordPress',
+                                'language' => 'en',
+                                'limit'    => 3,
+                            ],
+                            'bindings'   => [],
+                            'position'   => [ 'x' => 28, 'y' => 64 ],
+                        ],
+                        [
+                            'id'         => 'article',
+                            'ability_id' => 'wordopedia/get-article',
+                            'label'      => __( 'Fetch top article', 'pipes' ),
+                            'args'       => [],
+                            'bindings'   => [
+                                [ 'target' => 'page_id', 'source' => 'search', 'path' => 'articles.0.page_id' ],
+                                [ 'target' => 'language', 'source' => 'search', 'path' => 'language' ],
+                            ],
+                            'position'   => [ 'x' => 328, 'y' => 46 ],
+                        ],
+                        [
+                            'id'         => 'media',
+                            'ability_id' => 'wordopedia/list-article-media',
+                            'label'      => __( 'List article media', 'pipes' ),
+                            'args'       => [
+                                'mime' => 'image/svg+xml',
+                            ],
+                            'bindings'   => [
+                                [ 'target' => 'page_id', 'source' => 'search', 'path' => 'articles.0.page_id' ],
+                                [ 'target' => 'language', 'source' => 'search', 'path' => 'language' ],
+                            ],
+                            'position'   => [ 'x' => 628, 'y' => 84 ],
+                        ],
+                    ],
+                    'edges' => [
+                        [ 'from' => 'search', 'to' => 'article' ],
+                        [ 'from' => 'search', 'to' => 'media' ],
+                    ],
+                ],
+            ],
+            [
+                'id'          => 'friends-feed-review',
+                'title'       => __( 'Friends Feed Review', 'pipes' ),
+                'description' => __( 'List subscriptions, then inspect the first subscription and its cached feed items.', 'pipes' ),
+                'requires'    => [ 'friends/list-subscriptions', 'friends/get-subscription', 'friends/list-feed-items' ],
+                'graph'       => [
+                    'nodes' => [
+                        [
+                            'id'         => 'subscriptions',
+                            'ability_id' => 'friends/list-subscriptions',
+                            'label'      => __( 'List subscriptions', 'pipes' ),
+                            'args'       => [ 'limit' => 10 ],
+                            'bindings'   => [],
+                            'position'   => [ 'x' => 28, 'y' => 70 ],
+                        ],
+                        [
+                            'id'         => 'subscription',
+                            'ability_id' => 'friends/get-subscription',
+                            'label'      => __( 'Inspect first subscription', 'pipes' ),
+                            'args'       => [],
+                            'bindings'   => [
+                                [ 'target' => 'subscription_id', 'source' => 'subscriptions', 'path' => 'subscriptions.0.id' ],
+                            ],
+                            'position'   => [ 'x' => 328, 'y' => 40 ],
+                        ],
+                        [
+                            'id'         => 'items',
+                            'ability_id' => 'friends/list-feed-items',
+                            'label'      => __( 'Read latest items', 'pipes' ),
+                            'args'       => [ 'limit' => 10 ],
+                            'bindings'   => [
+                                [ 'target' => 'subscription_id', 'source' => 'subscriptions', 'path' => 'subscriptions.0.id' ],
+                            ],
+                            'position'   => [ 'x' => 628, 'y' => 92 ],
+                        ],
+                    ],
+                    'edges' => [
+                        [ 'from' => 'subscriptions', 'to' => 'subscription' ],
+                        [ 'from' => 'subscriptions', 'to' => 'items' ],
+                    ],
+                ],
+            ],
+            [
+                'id'          => 'flight-log-dashboard',
+                'title'       => __( 'Flight Log Dashboard', 'pipes' ),
+                'description' => __( 'Fetch flight statistics and a short list of recent matching flights.', 'pipes' ),
+                'requires'    => [ 'flight-log/get-summary', 'flight-log/search-flights' ],
+                'graph'       => [
+                    'nodes' => [
+                        [
+                            'id'         => 'summary',
+                            'ability_id' => 'flight-log/get-summary',
+                            'label'      => __( 'Get flight summary', 'pipes' ),
+                            'args'       => [],
+                            'bindings'   => [],
+                            'position'   => [ 'x' => 28, 'y' => 52 ],
+                        ],
+                        [
+                            'id'         => 'recent',
+                            'ability_id' => 'flight-log/search-flights',
+                            'label'      => __( 'Find recent flights', 'pipes' ),
+                            'args'       => [ 'limit' => 10 ],
+                            'bindings'   => [],
+                            'position'   => [ 'x' => 328, 'y' => 92 ],
+                        ],
+                    ],
+                    'edges' => [
+                        [ 'from' => 'summary', 'to' => 'recent' ],
+                    ],
+                ],
+            ],
+            [
+                'id'          => 'travel-plan-review',
+                'title'       => __( 'Travel Plan Review', 'pipes' ),
+                'description' => __( 'List travel plans and fetch the first plan for detailed review.', 'pipes' ),
+                'requires'    => [ 'travel-app/list-trips', 'travel-app/get-trip' ],
+                'graph'       => [
+                    'nodes' => [
+                        [
+                            'id'         => 'trips',
+                            'ability_id' => 'travel-app/list-trips',
+                            'label'      => __( 'List travel plans', 'pipes' ),
+                            'args'       => [],
+                            'bindings'   => [],
+                            'position'   => [ 'x' => 28, 'y' => 64 ],
+                        ],
+                        [
+                            'id'         => 'trip',
+                            'ability_id' => 'travel-app/get-trip',
+                            'label'      => __( 'Open first plan', 'pipes' ),
+                            'args'       => [],
+                            'bindings'   => [
+                                [ 'target' => 'id', 'source' => 'trips', 'path' => 'trips.0.id' ],
+                            ],
+                            'position'   => [ 'x' => 328, 'y' => 64 ],
+                        ],
+                    ],
+                    'edges' => [
+                        [ 'from' => 'trips', 'to' => 'trip' ],
+                    ],
+                ],
+            ],
+        ];
     }
 
     public function activate(): void {

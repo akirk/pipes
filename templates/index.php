@@ -394,6 +394,11 @@
                 <div class="notice">Loading pipes...</div>
             </div>
 
+            <h2 class="section-title">Starters</h2>
+            <div class="list" data-examples-list>
+                <div class="notice">Loading starters...</div>
+            </div>
+
             <h2 class="section-title">Abilities</h2>
             <input class="search" type="search" data-ability-search placeholder="Search abilities">
             <div class="list" data-abilities-list>
@@ -441,6 +446,7 @@
 
         const state = {
             abilities: [],
+            examples: [],
             pipes: [],
             selectedPipeId: null,
             selectedNodeId: null,
@@ -538,6 +544,18 @@
             render();
         };
 
+        const loadExample = (example) => {
+            state.selectedPipeId = null;
+            state.selectedNodeId = example.graph?.nodes?.[0]?.id || null;
+            state.title = example.title || 'Untitled Pipe';
+            state.graph = JSON.parse(JSON.stringify(example.graph || { nodes: [], edges: [] }));
+            state.dirty = true;
+            $('[data-title]').value = state.title;
+            $('[data-output]').textContent = '{}';
+            setStatus('Starter loaded. Save to keep it.');
+            render();
+        };
+
         const loadPipe = async (id) => {
             const data = await request(`pipes/${id}`);
             state.selectedPipeId = data.pipe.id;
@@ -607,6 +625,12 @@
             renderAbilities();
         };
 
+        const loadExamples = async () => {
+            const data = await request('examples');
+            state.examples = data.examples || [];
+            renderExamples();
+        };
+
         const renderPipes = () => {
             const list = $('[data-pipes-list]');
             if (!state.pipes.length) {
@@ -658,6 +682,29 @@
                     badges.append(badge('destructive', 'warn'));
                 }
                 button.addEventListener('click', () => addNode(ability));
+                list.append(button);
+            }
+        };
+
+        const renderExamples = () => {
+            const list = $('[data-examples-list]');
+            if (!state.examples.length) {
+                list.innerHTML = '<div class="notice">No starters available for the active abilities.</div>';
+                return;
+            }
+            list.innerHTML = '';
+            for (const example of state.examples) {
+                const button = document.createElement('button');
+                button.className = 'list-item';
+                button.innerHTML = `
+                    <strong></strong>
+                    <span class="meta"></span>
+                    <span class="badge-row"></span>
+                `;
+                $('strong', button).textContent = example.title;
+                $('.meta', button).textContent = example.description || '';
+                $('.badge-row', button).append(badge(`${example.graph?.nodes?.length || 0} nodes`));
+                button.addEventListener('click', () => loadExample(example));
                 list.append(button);
             }
         };
@@ -906,6 +953,7 @@
 
         const render = () => {
             renderPipes();
+            renderExamples();
             renderAbilities();
             renderGraph();
             renderInspector();
@@ -924,7 +972,7 @@
         $('[data-action="delete"]').addEventListener('click', () => deletePipe().catch((error) => setStatus(error.message, true)));
         $('[data-action="run"]').addEventListener('click', () => runPipe().catch((error) => setStatus(error.message, true)));
 
-        Promise.all([loadPipes(), loadAbilities()])
+        Promise.all([loadPipes(), loadAbilities(), loadExamples()])
             .then(render)
             .catch((error) => setStatus(error.message, true));
     })();

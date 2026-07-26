@@ -788,12 +788,33 @@
             setStatus('Unsaved changes');
         };
 
+        const normalizeArgs = (args) => {
+            if (args && typeof args === 'object' && !Array.isArray(args)) {
+                return args;
+            }
+            if (Array.isArray(args)) {
+                return Object.fromEntries(Object.entries(args).filter(([key]) => Number.isNaN(Number(key))));
+            }
+            return {};
+        };
+
+        const ensureNodeArgs = (node) => {
+            node.args = normalizeArgs(node.args);
+            return node.args;
+        };
+
+        const normalizeGraphArgs = () => {
+            for (const node of state.graph.nodes || []) {
+                ensureNodeArgs(node);
+            }
+        };
+
         const savedArgsStatus = () => {
             const node = selectedNode();
             if (!node) {
                 return 'Saved';
             }
-            const args = JSON.stringify(node.args || {});
+            const args = JSON.stringify(ensureNodeArgs(node));
             return `Saved ${node.label || node.ability_id} args: ${args.length > 180 ? `${args.slice(0, 177)}...` : args}`;
         };
 
@@ -870,7 +891,7 @@
             const props = schemaProperties(ability?.input_schema);
             const ports = props.length ?
                 props.slice(0, 6).map((prop) => ({ name: prop.name, label: prop.name })) :
-                Object.keys(node.args || {}).slice(0, 6).map((key) => ({ name: key, label: key }));
+                Object.keys(ensureNodeArgs(node)).slice(0, 6).map((key) => ({ name: key, label: key }));
             for (const binding of node.bindings || []) {
                 if (binding.target && !ports.some((port) => port.name === binding.target)) {
                     ports.push({ name: binding.target, label: binding.target });
@@ -1088,8 +1109,7 @@
             } else {
                 node.bindings.push({ target: state.activeBindingTarget, source: sourceId, path });
             }
-            node.args = node.args || {};
-            delete node.args[state.activeBindingTarget];
+            delete ensureNodeArgs(node)[state.activeBindingTarget];
             syncEdgesFromBindings();
             markDirty();
             render();
@@ -1142,7 +1162,7 @@
         const collectUserAnswers = () => {
             const answers = {};
             for (const node of state.graph.nodes) {
-                for (const [key, value] of Object.entries(node.args || {})) {
+                for (const [key, value] of Object.entries(ensureNodeArgs(node))) {
                     if (!isUserQueryArg(value)) {
                         continue;
                     }
@@ -1166,7 +1186,7 @@
                 if (!node) {
                     return;
                 }
-                node.args = node.args || {};
+                ensureNodeArgs(node);
                 try {
                     const nextValue = parseArgValue(prop, control.value, control.checked);
                     if (nextValue === undefined || Number.isNaN(nextValue)) {
@@ -1282,6 +1302,7 @@
             state.selectedNodeId = data.pipe.graph?.nodes?.[0]?.id || null;
             state.title = data.pipe.title || example.title || 'Untitled Pipe';
             state.graph = data.pipe.graph || { nodes: [], edges: [] };
+            normalizeGraphArgs();
             state.lastRunResults = {};
             state.activeBindingTarget = '';
             state.listAddOpen = false;
@@ -1301,6 +1322,7 @@
             state.selectedPipeId = data.pipe.id;
             state.title = data.pipe.title;
             state.graph = data.pipe.graph || { nodes: [], edges: [] };
+            normalizeGraphArgs();
             state.selectedNodeId = state.graph.nodes[0]?.id || null;
             state.lastRunResults = {};
             state.activeBindingTarget = '';
@@ -1318,6 +1340,7 @@
 
         const savePipe = async () => {
             flushListArgs();
+            normalizeGraphArgs();
             state.title = $('[data-title]').value.trim() || 'Untitled Pipe';
             const path = state.selectedPipeId ? `pipes/${state.selectedPipeId}` : 'pipes';
             const data = await request(path, {
@@ -1327,6 +1350,7 @@
             state.selectedPipeId = data.pipe.id;
             state.title = data.pipe.title;
             state.graph = data.pipe.graph;
+            normalizeGraphArgs();
             state.dirty = false;
             $('[data-title]').value = state.title;
             setPipeUrl(state.selectedPipeId);
@@ -1352,6 +1376,7 @@
         const runPipe = async () => {
             setStatus('Running...');
             flushListArgs();
+            normalizeGraphArgs();
             const userAnswers = collectUserAnswers();
             try {
                 const data = await request('run', {
@@ -1934,7 +1959,7 @@
                 <button class="danger" data-action="remove-node">Remove Node</button>
             `;
             $('[data-node-label]', inspector).value = node.label || ability?.label || node.ability_id;
-            $('[data-node-args]', inspector).value = JSON.stringify(node.args || {}, null, 2);
+            $('[data-node-args]', inspector).value = JSON.stringify(ensureNodeArgs(node), null, 2);
 
             const schema = $('[data-schema]', inspector);
             schema.innerHTML = props.length ? '' : '<div class="notice">This ability has no declared input schema.</div>';
@@ -1949,7 +1974,7 @@
                 const binding = (node.bindings || []).find((candidate) => candidate.target === prop.name);
                 if (binding) {
                     $('.badge-row', row).append(badge(`${binding.source}.${binding.path || '(whole output)'}`));
-                } else if (Object.prototype.hasOwnProperty.call(node.args || {}, prop.name)) {
+                } else if (Object.prototype.hasOwnProperty.call(ensureNodeArgs(node), prop.name)) {
                     $('.badge-row', row).append(badge('base arg'));
                 }
                 row.addEventListener('click', () => {
@@ -1966,7 +1991,7 @@
             });
             $('[data-node-args]', inspector).addEventListener('change', (event) => {
                 try {
-                    node.args = JSON.parse(event.target.value || '{}');
+                    node.args = normalizeArgs(JSON.parse(event.target.value || '{}'));
                     markDirty();
                     setStatus('Unsaved changes');
                 } catch (error) {
@@ -2044,11 +2069,11 @@
             }
 
             container.innerHTML = '<strong>Inputs</strong>';
-            node.args = node.args || {};
+            ensureNodeArgs(node);
             for (const prop of props) {
                 const binding = (node.bindings || []).find((candidate) => candidate.target === prop.name);
                 const sourceNodes = compatibleBindingSourceNodesFor(node, prop);
-                const argValue = node.args[prop.name];
+                const argValue = ensureNodeArgs(node)[prop.name];
                 const row = document.createElement('div');
                 row.className = 'list-arg';
                 row.innerHTML = '<label></label>';
@@ -2075,7 +2100,7 @@
                     const existing = node.bindings.find((candidate) => candidate.target === prop.name);
                     if (!event.target.value) {
                         node.bindings = node.bindings.filter((candidate) => candidate.target !== prop.name);
-                        if (isUserQueryArg(node.args[prop.name])) {
+                        if (isUserQueryArg(ensureNodeArgs(node)[prop.name])) {
                             delete node.args[prop.name];
                         }
                         syncEdgesFromBindings();
@@ -2085,7 +2110,7 @@
                     }
                     if (event.target.value === '__ask_user') {
                         node.bindings = node.bindings.filter((candidate) => candidate.target !== prop.name);
-                        node.args[prop.name] = {
+                        ensureNodeArgs(node)[prop.name] = {
                             __pipes_user_query: true,
                             question: `What should ${prop.name} be?`
                         };
@@ -2102,20 +2127,20 @@
                     if (!existing) {
                         node.bindings.push(nextBinding);
                     }
-                    delete node.args[prop.name];
+                    delete ensureNodeArgs(node)[prop.name];
                     syncEdgesFromBindings();
                     markDirty();
                     render();
                 });
                 row.append(bindSelect);
 
-                if (isUserQueryArg(node.args[prop.name])) {
+                if (isUserQueryArg(ensureNodeArgs(node)[prop.name])) {
                     const question = document.createElement('input');
                     question.type = 'text';
                     question.value = node.args[prop.name].question || '';
                     question.placeholder = `Question for ${prop.name}`;
                     question.addEventListener('input', (event) => {
-                        node.args[prop.name].question = event.target.value;
+                        ensureNodeArgs(node)[prop.name].question = event.target.value;
                         markDirty();
                     });
                     row.append(question);
@@ -2167,15 +2192,15 @@
                         pathInput.dataset.listArgNode = node.id;
                         pathInput.dataset.listArg = prop.name;
                         pathInput.dataset.listArgType = prop.type;
-                        pathInput.value = formatArgValue(node.args[prop.name]);
+                        pathInput.value = formatArgValue(ensureNodeArgs(node)[prop.name]);
                         pathSelect.value = suggestions.includes(pathInput.value) ? pathInput.value : '';
                         pathSelect.addEventListener('change', (event) => {
                             pathInput.value = event.target.value;
-                            node.args[prop.name] = event.target.value;
+                            ensureNodeArgs(node)[prop.name] = event.target.value;
                             markDirty();
                         });
                         pathInput.addEventListener('input', (event) => {
-                            node.args[prop.name] = event.target.value;
+                            ensureNodeArgs(node)[prop.name] = event.target.value;
                             pathSelect.value = suggestions.includes(event.target.value) ? event.target.value : '';
                             markDirty();
                         });
@@ -2191,7 +2216,7 @@
                     }
                 }
 
-                const value = node.args[prop.name];
+                const value = ensureNodeArgs(node)[prop.name];
                 const control = document.createElement(prop.type.includes('array') || prop.type.includes('object') ? 'textarea' : 'input');
                 control.dataset.listArgNode = node.id;
                 control.dataset.listArg = prop.name;
@@ -2214,9 +2239,9 @@
                     try {
                         const nextValue = parseArgValue(prop, event.target.value, event.target.checked);
                         if (nextValue === undefined || Number.isNaN(nextValue)) {
-                            delete node.args[prop.name];
+                            delete ensureNodeArgs(node)[prop.name];
                         } else {
-                            node.args[prop.name] = nextValue;
+                            ensureNodeArgs(node)[prop.name] = nextValue;
                         }
                         markDirty();
                     } catch (error) {

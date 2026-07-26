@@ -308,6 +308,12 @@
             padding: 0.65rem;
             white-space: pre-wrap;
         }
+        .output-preview-actions {
+            align-items: center;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
         .rendered-output {
             background: var(--pipes-surface);
             border: 1px solid var(--pipes-border);
@@ -1806,6 +1812,9 @@
                     <div class="output-preview" data-output-preview hidden>
                         <strong data-output-preview-title>Output preview</strong>
                         <pre></pre>
+                        <div class="output-preview-actions" data-output-preview-actions hidden>
+                            <button type="button" data-run-from-preview>Run pipe</button>
+                        </div>
                         <div class="rendered-output" data-rendered-preview hidden></div>
                     </div>
                 `;
@@ -1927,9 +1936,21 @@
             }
             const pre = $('pre', container);
             const rendered = $('[data-rendered-preview]', container);
+            const actions = $('[data-output-preview-actions]', container);
             if (rendered) {
                 rendered.hidden = true;
                 rendered.innerHTML = '';
+            }
+            if (actions) {
+                actions.hidden = true;
+                const runButton = $('[data-run-from-preview]', actions);
+                if (runButton) {
+                    runButton.onclick = (event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        runPipe().catch((error) => setStatus(error.message, true));
+                    };
+                }
             }
             pre.hidden = false;
             const run = state.lastRunResults[node.id];
@@ -1937,7 +1958,11 @@
                 if (isOutputNode(node)) {
                     container.hidden = false;
                     $('[data-output-preview-title]', container).textContent = 'Output preview';
-                    pre.textContent = 'Run the pipe to preview this output node.';
+                    pre.hidden = true;
+                    pre.textContent = '';
+                    if (actions) {
+                        actions.hidden = false;
+                    }
                 } else {
                     container.hidden = true;
                 }
@@ -2170,6 +2195,9 @@
                 <div class="output-preview" data-inspector-output-preview hidden>
                     <strong data-output-preview-title>Output preview</strong>
                     <pre></pre>
+                    <div class="output-preview-actions" data-output-preview-actions hidden>
+                        <button type="button" data-run-from-preview>Run pipe</button>
+                    </div>
                     <div class="rendered-output" data-rendered-preview hidden></div>
                 </div>
                 <button class="danger" data-action="remove-node">Remove Node</button>

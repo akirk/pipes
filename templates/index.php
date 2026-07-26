@@ -244,6 +244,16 @@
             font-size: 0.95rem;
             margin: 0 0 0.2rem;
         }
+        .flow-step-title {
+            border-color: transparent;
+            font-size: 0.95rem;
+            font-weight: 700;
+            margin: -0.3rem 0 0.1rem -0.45rem;
+            padding: 0.3rem 0.45rem;
+        }
+        .flow-step-title:focus {
+            border-color: var(--pipes-accent);
+        }
         .flow-step-actions {
             display: flex;
             flex-wrap: wrap;
@@ -1376,13 +1386,12 @@
                     <div class="flow-step-header">
                         <div class="flow-step-number"></div>
                         <div class="flow-step-main">
-                            <h2></h2>
+                            <input class="flow-step-title" type="text" data-step-label>
                             <div class="meta"></div>
                             <div class="badge-row"></div>
                         </div>
                     </div>
                     <div class="flow-step-actions">
-                        <button data-step-action="configure">Configure</button>
                         <button data-step-action="up">Up</button>
                         <button data-step-action="down">Down</button>
                         <button class="danger" data-step-action="remove">Remove</button>
@@ -1395,7 +1404,7 @@
                     </div>
                 `;
                 $('.flow-step-number', step).textContent = String(index + 1);
-                $('h2', step).textContent = node.label || ability?.label || node.ability_id;
+                $('[data-step-label]', step).value = node.label || ability?.label || node.ability_id;
                 $('.meta', step).textContent = node.ability_id;
                 const props = schemaProperties(ability?.input_schema);
                 const badges = $('.badge-row', step);
@@ -1422,6 +1431,19 @@
                 }
                 renderListArgs(node, props, $('[data-list-args]', step));
                 renderBindings(node, props, $('[data-list-bindings]', step));
+                $('[data-step-label]', step).addEventListener('input', (event) => {
+                    state.selectedNodeId = node.id;
+                    node.label = event.target.value;
+                    markDirty();
+                    renderGraph();
+                    renderInspector();
+                });
+                $('[data-step-label]', step).addEventListener('blur', () => {
+                    if (!node.label.trim()) {
+                        node.label = ability?.label || node.ability_id;
+                        render();
+                    }
+                });
                 step.addEventListener('click', (event) => {
                     const action = event.target.closest('[data-step-action]')?.dataset.stepAction;
                     if (!action && event.target.closest('input, select, textarea')) {
@@ -1433,9 +1455,7 @@
                         render();
                         return;
                     }
-                    if (action === 'configure') {
-                        state.selectedNodeId = node.id;
-                    } else if (action === 'up') {
+                    if (action === 'up') {
                         moveNode(index, -1);
                     } else if (action === 'down') {
                         moveNode(index, 1);

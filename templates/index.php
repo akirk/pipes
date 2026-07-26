@@ -832,6 +832,32 @@
             return ports;
         };
 
+        const nodeHasOutput = (node) => {
+            if (!node) {
+                return false;
+            }
+            if (state.lastRunResults[node.id]?.result !== undefined) {
+                return true;
+            }
+            const ability = abilityById(node.ability_id);
+            if (schemaProperties(ability?.output_schema).length) {
+                return true;
+            }
+            return state.graph.nodes.some((targetNode) => (
+                targetNode.id !== node.id &&
+                (targetNode.bindings || []).some((binding) => binding.source === node.id)
+            ));
+        };
+
+        const bindingSourceNodesFor = (node) => {
+            const nodeIndex = state.graph.nodes.findIndex((candidate) => candidate.id === node.id);
+            return state.graph.nodes.filter((candidate, index) => (
+                candidate.id !== node.id &&
+                (nodeIndex < 0 || index < nodeIndex) &&
+                nodeHasOutput(candidate)
+            ));
+        };
+
         const defaultArgsForAbility = (ability) => {
             const args = {};
             for (const prop of schemaProperties(ability.input_schema)) {
@@ -919,7 +945,7 @@
         };
 
         const defaultBindingForNode = (node, props) => {
-            const source = state.graph.nodes.find((candidate) => candidate.id !== node.id);
+            const source = bindingSourceNodesFor(node)[0];
             return {
                 target: props[0]?.name || '',
                 source: source?.id || '',
@@ -1688,7 +1714,7 @@
 
         const renderOutputPaths = (node) => {
             const container = $('[data-output-paths]');
-            const sourceNodes = state.graph.nodes.filter((candidate) => candidate.id !== node.id);
+            const sourceNodes = bindingSourceNodesFor(node);
             const panels = [];
             for (const source of sourceNodes) {
                 const runResult = state.lastRunResults[source.id]?.result;
@@ -1742,7 +1768,7 @@
             node.args = node.args || {};
             for (const prop of props) {
                 const binding = (node.bindings || []).find((candidate) => candidate.target === prop.name);
-                const sourceNodes = state.graph.nodes.filter((candidate) => candidate.id !== node.id);
+                const sourceNodes = bindingSourceNodesFor(node);
                 const row = document.createElement('div');
                 row.className = 'list-arg';
                 row.innerHTML = '<label></label>';
@@ -1855,7 +1881,7 @@
             if (!container) {
                 return;
             }
-            const sourceNodes = state.graph.nodes.filter((candidate) => candidate.id !== node.id);
+            const sourceNodes = bindingSourceNodesFor(node);
             node.bindings = node.bindings || [];
             if (!node.bindings.length) {
                 container.innerHTML = '<div class="notice">No bindings. Base args are passed directly.</div>';

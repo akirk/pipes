@@ -206,6 +206,13 @@
         .builder-list .list-builder {
             display: block;
         }
+        .builder-list + .inspector,
+        .app:has(.builder-list) .inspector {
+            display: none;
+        }
+        .app:has(.builder-list) {
+            grid-template-columns: 18rem minmax(24rem, 1fr);
+        }
         .flow-list {
             display: grid;
             gap: 0.75rem;
@@ -611,10 +618,7 @@
                 padding: 0.75rem;
             }
             .inspector {
-                order: 3;
-                border-left: 0;
-                border-top: 1px solid var(--pipes-border);
-                padding: 0.75rem;
+                display: none;
             }
             .topbar, .title-row {
                 grid-template-columns: 1fr;
@@ -1107,7 +1111,7 @@
                 return 'null';
             }
             if (value === undefined) {
-                return 'undefined';
+                return 'No value';
             }
             if (Array.isArray(value)) {
                 return JSON.stringify(value.slice(0, 5), null, 2);
@@ -1805,7 +1809,8 @@
             }
             const run = state.lastRunResults[node.id];
             if (!run) {
-                container.hidden = true;
+                container.hidden = false;
+                $('pre', container).textContent = 'Run the pipe to preview this output node.';
                 return;
             }
             const result = run.result;

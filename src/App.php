@@ -739,6 +739,7 @@ class App extends BaseApp {
 
         echo '<div class="pipes-output pipes-output-dashboard">';
         echo $this->render_pipe_output_html( $pipe, $target ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+        echo $this->render_dashboard_output_footer( $pipe ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
         echo '</div>';
     }
 
@@ -767,7 +768,7 @@ class App extends BaseApp {
                     'id'     => 'pipes-graph-' . $pipe->ID . '-' . $target['node_id'],
                     'parent' => 'pipes-outputs',
                     'title'  => $this->render_sparkline_title( $target['label'], $value ),
-                    'href'   => home_url( '/pipes/' ),
+                    'href'   => $this->get_pipe_edit_url( $pipe ),
                     'meta'   => [
                         'class' => 'pipes-masterbar-graph',
                     ],
@@ -781,7 +782,7 @@ class App extends BaseApp {
                     'id'     => 'pipes-menu-' . $pipe->ID . '-' . $target['node_id'],
                     'parent' => 'pipes-outputs',
                     'title'  => esc_html( $target['label'] ),
-                    'href'   => home_url( '/pipes/' ),
+                    'href'   => $this->get_pipe_edit_url( $pipe ),
                 ] );
 
                 foreach ( $this->get_masterbar_menu_items( $pipe, $target ) as $index => $item ) {
@@ -789,7 +790,7 @@ class App extends BaseApp {
                         'id'     => 'pipes-menu-' . $pipe->ID . '-' . $target['node_id'] . '-' . $index,
                         'parent' => 'pipes-menu-' . $pipe->ID . '-' . $target['node_id'],
                         'title'  => esc_html( $item ),
-                        'href'   => home_url( '/pipes/' ),
+                        'href'   => $this->get_pipe_edit_url( $pipe ),
                     ] );
                 }
             }
@@ -805,6 +806,7 @@ class App extends BaseApp {
             .pipes-output table { width: 100%; border-collapse: collapse; }
             .pipes-output th, .pipes-output td { border-bottom: 1px solid #dcdcde; padding: 6px 8px; text-align: left; vertical-align: top; }
             .pipes-output ul { margin: 0 0 0 1.2em; }
+            .pipes-output-footer { align-items: center; border-top: 1px solid #dcdcde; color: #646970; display: flex; flex-wrap: wrap; font-size: 12px; gap: 8px; justify-content: space-between; margin-top: 12px; padding-top: 8px; }
             #wpadminbar .pipes-masterbar-graph svg { display: inline-block; margin-left: 6px; vertical-align: middle; }
         </style>
         <?php
@@ -969,13 +971,40 @@ class App extends BaseApp {
         $cache_key = 'pipes_output_' . get_current_user_id() . '_' . $post->ID . '_' . md5( $post->post_modified_gmt );
         $cached    = get_transient( $cache_key );
         if ( false !== $cached ) {
+            if ( is_array( $cached ) ) {
+                $cached['cached'] = true;
+            }
             return $cached;
         }
 
         $result = $this->run_graph( $this->get_pipe_graph( $post ), false );
+        if ( is_array( $result ) ) {
+            $result['generated_at'] = time();
+            $result['cached']       = false;
+        }
         set_transient( $cache_key, $result, 5 * MINUTE_IN_SECONDS );
 
         return $result;
+    }
+
+    private function render_dashboard_output_footer( \WP_Post $post ): string {
+        $run = $this->get_cached_pipe_run( $post );
+        $generated_at = is_array( $run ) ? (int) ( $run['generated_at'] ?? 0 ) : 0;
+        $generated = $generated_at > 0
+            ? sprintf( __( 'Generated %s ago.', 'pipes' ), human_time_diff( $generated_at, time() ) )
+            : __( 'Generated on demand.', 'pipes' );
+
+        return sprintf(
+            '<div class="pipes-output-footer"><span>%1$s %2$s</span><a href="%3$s">%4$s</a></div>',
+            esc_html( $generated ),
+            esc_html__( 'Cached for up to 5 minutes.', 'pipes' ),
+            esc_url( $this->get_pipe_edit_url( $post ) ),
+            esc_html__( 'Edit pipe', 'pipes' )
+        );
+    }
+
+    private function get_pipe_edit_url( \WP_Post $post ): string {
+        return add_query_arg( 'pipe', (string) $post->ID, home_url( '/pipes/' ) );
     }
 
     private function render_pipe_output_html( \WP_Post $post, array $target ): string {

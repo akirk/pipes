@@ -733,6 +733,16 @@
             setStatus('Unsaved changes');
         };
 
+        const setPipeUrl = (pipeId = null) => {
+            const url = new URL(window.location.href);
+            if (pipeId) {
+                url.searchParams.set('pipe', String(pipeId));
+            } else {
+                url.searchParams.delete('pipe');
+            }
+            window.history.replaceState({}, '', url);
+        };
+
         const setBuilderMode = (mode) => {
             state.builderMode = mode === 'list' ? 'list' : 'visual';
             renderBuilderMode();
@@ -989,6 +999,7 @@
             state.dirty = false;
             $('[data-title]').value = state.title;
             $('[data-output]').textContent = '{}';
+            setPipeUrl();
             setStatus('Not saved');
             render();
         };
@@ -1005,13 +1016,14 @@
             state.dirty = false;
             $('[data-title]').value = state.title;
             $('[data-output]').textContent = '{}';
+            setPipeUrl(state.selectedPipeId);
             setStatus('Starter pipe loaded');
             await loadPipes();
             await loadExamples();
             render();
         };
 
-        const loadPipe = async (id) => {
+        const loadPipe = async (id, updateUrl = true) => {
             const data = await request(`pipes/${id}`);
             state.selectedPipeId = data.pipe.id;
             state.title = data.pipe.title;
@@ -1022,6 +1034,9 @@
             state.dirty = false;
             $('[data-title]').value = state.title;
             $('[data-output]').textContent = '{}';
+            if (updateUrl) {
+                setPipeUrl(state.selectedPipeId);
+            }
             setStatus('Saved');
             render();
         };
@@ -1038,6 +1053,7 @@
             state.graph = data.pipe.graph;
             state.dirty = false;
             $('[data-title]').value = state.title;
+            setPipeUrl(state.selectedPipeId);
             setStatus('Saved');
             await loadPipes();
             render();
@@ -1053,6 +1069,7 @@
             }
             await request(`pipes/${state.selectedPipeId}`, { method: 'DELETE' });
             await loadPipes();
+            setPipeUrl();
             newPipe();
         };
 
@@ -1792,7 +1809,14 @@
         });
 
         Promise.all([loadPipes(), loadAbilities(), loadExamples()])
-            .then(render)
+            .then(() => {
+                const pipeId = Number(new URLSearchParams(window.location.search).get('pipe') || 0);
+                if (pipeId > 0) {
+                    return loadPipe(pipeId, false);
+                }
+                render();
+                return null;
+            })
             .catch((error) => setStatus(error.message, true));
     })();
     </script>

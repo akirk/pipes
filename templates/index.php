@@ -997,16 +997,42 @@
             }
             const seen = new Set();
             const suggestions = [];
-            for (const item of items.slice(0, 5)) {
-                for (const entry of flattenPaths(item).filter((candidate) => candidate.path)) {
-                    if (seen.has(entry.path)) {
-                        continue;
-                    }
-                    seen.add(entry.path);
-                    suggestions.push(entry.path);
+            const collectItemPaths = (value, prefix = '') => {
+                if (suggestions.length >= 120 || value === null || value === undefined) {
+                    return;
                 }
+                if (Array.isArray(value)) {
+                    if (prefix && !seen.has(prefix)) {
+                        seen.add(prefix);
+                        suggestions.push(prefix);
+                    }
+                    if (value.length) {
+                        collectItemPaths(value[0], prefix ? `${prefix}.0` : '');
+                    }
+                    return;
+                }
+                if (typeof value !== 'object') {
+                    if (prefix && !seen.has(prefix)) {
+                        seen.add(prefix);
+                        suggestions.push(prefix);
+                    }
+                    return;
+                }
+                for (const [key, item] of Object.entries(value)) {
+                    const path = prefix ? `${prefix}.${key}` : key;
+                    if (!seen.has(path)) {
+                        seen.add(path);
+                        suggestions.push(path);
+                    }
+                    if (item && typeof item === 'object') {
+                        collectItemPaths(item, path);
+                    }
+                }
+            };
+            for (const item of items.slice(0, 5)) {
+                collectItemPaths(item);
             }
-            return suggestions.slice(0, 30);
+            return suggestions.slice(0, 80);
         };
 
         const formatPathValue = (value) => {
@@ -2078,23 +2104,32 @@
                 if (prop.name === 'path') {
                     const suggestions = itemPathSuggestionsFor(node);
                     if (suggestions.length) {
-                        const listId = `path-suggestions-${node.id}-${prop.name}`;
-                        const pathInput = document.createElement('input');
-                        pathInput.type = 'text';
-                        pathInput.setAttribute('list', listId);
-                        pathInput.value = formatArgValue(node.args[prop.name]);
-                        const datalist = document.createElement('datalist');
-                        datalist.id = listId;
+                        const pathSelect = document.createElement('select');
+                        const choose = document.createElement('option');
+                        choose.value = '';
+                        choose.textContent = 'Choose item field';
+                        pathSelect.append(choose);
                         for (const suggestion of suggestions) {
                             const option = document.createElement('option');
                             option.value = suggestion;
-                            datalist.append(option);
+                            option.textContent = suggestion;
+                            pathSelect.append(option);
                         }
-                        pathInput.addEventListener('input', (event) => {
+                        const pathInput = document.createElement('input');
+                        pathInput.type = 'text';
+                        pathInput.value = formatArgValue(node.args[prop.name]);
+                        pathSelect.value = suggestions.includes(pathInput.value) ? pathInput.value : '';
+                        pathSelect.addEventListener('change', (event) => {
+                            pathInput.value = event.target.value;
                             node.args[prop.name] = event.target.value;
                             markDirty();
                         });
-                        row.append(pathInput, datalist);
+                        pathInput.addEventListener('input', (event) => {
+                            node.args[prop.name] = event.target.value;
+                            pathSelect.value = suggestions.includes(event.target.value) ? event.target.value : '';
+                            markDirty();
+                        });
+                        row.append(pathSelect, pathInput);
                         container.append(row);
                         continue;
                     }

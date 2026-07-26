@@ -1687,7 +1687,7 @@
                     </div>
                     <div class="list-args" data-list-args></div>
                     <div class="output-preview" data-output-preview hidden>
-                        <strong>Output preview</strong>
+                        <strong data-output-preview-title>Output preview</strong>
                         <pre></pre>
                     </div>
                 `;
@@ -1804,22 +1804,33 @@
         };
 
         const renderOutputPreview = (node, container) => {
-            if (!container || !isOutputNode(node)) {
+            if (!container) {
                 return;
             }
             const run = state.lastRunResults[node.id];
             if (!run) {
-                container.hidden = false;
-                $('pre', container).textContent = 'Run the pipe to preview this output node.';
+                if (isOutputNode(node)) {
+                    container.hidden = false;
+                    $('[data-output-preview-title]', container).textContent = 'Output preview';
+                    $('pre', container).textContent = 'Run the pipe to preview this output node.';
+                } else {
+                    container.hidden = true;
+                }
                 return;
             }
-            const result = run.result;
-            const value = result && typeof result === 'object' && Object.prototype.hasOwnProperty.call(result, 'value') ?
-                result.value :
-                undefined;
-            const inputValue = run.input && Object.prototype.hasOwnProperty.call(run.input, 'value') ? run.input.value : undefined;
             container.hidden = false;
-            $('pre', container).textContent = `Input value:\n${compactPreview(inputValue)}\n\nRendered value:\n${compactPreview(value)}`;
+            if (isOutputNode(node)) {
+                const result = run.result;
+                const value = result && typeof result === 'object' && Object.prototype.hasOwnProperty.call(result, 'value') ?
+                    result.value :
+                    undefined;
+                const inputValue = run.input && Object.prototype.hasOwnProperty.call(run.input, 'value') ? run.input.value : undefined;
+                $('[data-output-preview-title]', container).textContent = 'Output preview';
+                $('pre', container).textContent = `Input value:\n${compactPreview(inputValue)}\n\nRendered value:\n${compactPreview(value)}`;
+                return;
+            }
+            $('[data-output-preview-title]', container).textContent = 'Node output';
+            $('pre', container).textContent = compactPreview(run.result);
         };
 
         const moveNode = (index, direction) => {
@@ -2021,7 +2032,7 @@
                     <button data-action="add-binding">Add Binding</button>
                 </div>
                 <div class="output-preview" data-inspector-output-preview hidden>
-                    <strong>Output preview</strong>
+                    <strong data-output-preview-title>Output preview</strong>
                     <pre></pre>
                 </div>
                 <button class="danger" data-action="remove-node">Remove Node</button>

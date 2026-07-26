@@ -832,6 +832,7 @@
             activeBindingTarget: '',
             builderMode: window.matchMedia('(max-width: 760px)').matches ? 'list' : 'visual',
             listAddOpen: false,
+            listAddIndex: null,
             listAddSearch: '',
             dirty: false
         };
@@ -873,6 +874,11 @@
         const markDirty = () => {
             state.dirty = true;
             setStatus('Unsaved changes');
+        };
+
+        const clearRunResults = () => {
+            state.lastRunResults = {};
+            $('[data-output]').textContent = '{}';
         };
 
         const normalizeArgs = (args) => {
@@ -1347,6 +1353,65 @@
             };
         };
 
+        const inputPropForNode = (node, propName) => (
+            schemaProperties(abilityById(node.ability_id)?.input_schema)
+                .find((prop) => prop.name === propName)
+        );
+
+        const outputPortForInput = (source, inputProp) => (
+            compatibleOutputPortsFor(source, inputProp)[0] || null
+        );
+
+        const firstCompatibleInputBinding = (target, source) => {
+            const props = schemaProperties(abilityById(target.ability_id)?.input_schema);
+            for (const prop of props) {
+                if (prop.name === 'columns') {
+                    continue;
+                }
+                const port = outputPortForInput(source, prop);
+                if (port) {
+                    return { target: prop.name, source: source.id, path: port.path };
+                }
+            }
+            return null;
+        };
+
+        const firstCompatibleOutputBinding = (target, source, targetPropName) => {
+            const prop = inputPropForNode(target, targetPropName);
+            if (!prop) {
+                return null;
+            }
+            const port = outputPortForInput(source, prop);
+            return port ? { target: targetPropName, source: source.id, path: port.path } : null;
+        };
+
+        const autoBindInsertedNode = (node, previous, next) => {
+            if (previous) {
+                const binding = firstCompatibleInputBinding(node, previous);
+                if (binding) {
+                    node.bindings = [binding];
+                    delete ensureNodeArgs(node)[binding.target];
+                }
+            }
+
+            if (!next || !previous) {
+                return;
+            }
+
+            next.bindings = next.bindings || [];
+            for (const binding of next.bindings) {
+                if (binding.source !== previous.id) {
+                    continue;
+                }
+                const replacement = firstCompatibleOutputBinding(next, node, binding.target);
+                if (!replacement) {
+                    continue;
+                }
+                binding.source = replacement.source;
+                binding.path = replacement.path;
+            }
+        };
+
         const formatArgValue = (value) => {
             if (value === undefined || value === null) {
                 return '';
@@ -1480,22 +1545,29 @@
             element.addEventListener('pointercancel', finish);
         };
 
-        const addNode = (ability) => {
-            const index = state.graph.nodes.length;
+        const addNode = (ability, insertIndex = state.graph.nodes.length) => {
+            const index = Math.max(0, Math.min(insertIndex, state.graph.nodes.length));
             const id = `node-${Date.now().toString(36)}-${index}`;
-            const previous = state.graph.nodes[index - 1];
+            const previous = state.graph.nodes[index - 1] || null;
+            const next = state.graph.nodes[index] || null;
             const mobile = window.matchMedia('(max-width: 760px)').matches;
-            state.graph.nodes.push({
+            const node = {
                 id,
                 ability_id: ability.id,
                 label: ability.label,
                 args: defaultArgsForAbility(ability),
                 bindings: [],
                 position: mobile ? { x: 36, y: 42 + index * 245 } : { x: 28 + index * 320, y: 42 + (index % 3) * 48 }
+            };
+            state.graph.nodes.splice(index, 0, node);
+            state.graph.nodes.forEach((candidate, nextIndex) => {
+                candidate.position = mobile ?
+                    { x: 36, y: 42 + nextIndex * 245 } :
+                    { ...candidate.position, x: 28 + nextIndex * 320 };
             });
-            if (previous) {
-                state.graph.edges.push({ from: previous.id, to: id });
-            }
+            autoBindInsertedNode(node, previous, next);
+            syncEdgesFromBindings();
+            clearRunResults();
             state.selectedNodeId = id;
             markDirty();
             render();
@@ -1509,6 +1581,7 @@
             state.lastRunResults = {};
             state.activeBindingTarget = '';
             state.listAddOpen = false;
+            state.listAddIndex = null;
             state.listAddSearch = '';
             state.dirty = false;
             $('[data-title]').value = state.title;
@@ -1529,6 +1602,7 @@
             state.lastRunResults = {};
             state.activeBindingTarget = '';
             state.listAddOpen = false;
+            state.listAddIndex = null;
             state.listAddSearch = '';
             state.dirty = false;
             $('[data-title]').value = state.title;
@@ -1550,6 +1624,7 @@
             state.lastRunResults = {};
             state.activeBindingTarget = '';
             state.listAddOpen = false;
+            state.listAddIndex = null;
             state.listAddSearch = '';
             state.dirty = false;
             $('[data-title]').value = state.title;
@@ -1844,7 +1919,8 @@
         const renderListBuilder = () => {
             const container = $('[data-list-builder]');
             if (!state.graph.nodes.length) {
-                container.innerHTML = '<div class="empty">Add abilities from the ability tray to build a flow.</div>';
+                container.innerHTML = '<div class="flow-list" data-flow-list><div class="empty">Add abilities from the ability tray or start here.</div></div>';
+                renderListAddNode($('[data-flow-list]', container), 0);
                 return;
             }
 
@@ -1928,17 +2004,21 @@
                     render();
                 });
                 list.append(step);
+                renderListAddNode(list, index + 1);
             });
-            renderListAddNode(list);
         };
 
-        const renderListAddNode = (list) => {
+        const renderListAddNode = (list, insertIndex = state.graph.nodes.length) => {
             const wrapper = document.createElement('div');
             wrapper.className = 'flow-add';
-            if (!state.listAddOpen) {
-                wrapper.innerHTML = '<button class="flow-add-button" data-list-add-open><strong>+</strong><span>Add next node</span></button>';
+            const isOpen = state.listAddOpen && state.listAddIndex === insertIndex;
+            if (!isOpen) {
+                const label = insertIndex >= state.graph.nodes.length ? 'Add next node' : 'Insert node here';
+                wrapper.innerHTML = '<button class="flow-add-button" data-list-add-open><strong>+</strong><span></span></button>';
+                $('span', wrapper).textContent = label;
                 $('[data-list-add-open]', wrapper).addEventListener('click', () => {
                     state.listAddOpen = true;
+                    state.listAddIndex = insertIndex;
                     renderListBuilder();
                     $('[data-list-add-search]')?.focus();
                 });
@@ -1970,9 +2050,11 @@
                     $('strong', button).textContent = ability.label;
                     $('.meta', button).textContent = ability.id;
                     button.addEventListener('click', () => {
+                        const targetIndex = state.listAddIndex ?? state.graph.nodes.length;
                         state.listAddOpen = false;
+                        state.listAddIndex = null;
                         state.listAddSearch = '';
-                        addNode(ability);
+                        addNode(ability, targetIndex);
                     });
                     results.append(button);
                 }
@@ -1983,6 +2065,7 @@
             });
             $('[data-list-add-cancel]', wrapper).addEventListener('click', () => {
                 state.listAddOpen = false;
+                state.listAddIndex = null;
                 state.listAddSearch = '';
                 renderListBuilder();
             });
@@ -2071,13 +2154,69 @@
             markDirty();
         };
 
+        const bridgeBindingCandidate = (removed, downstream, downstreamBinding) => {
+            const downstreamProp = inputPropForNode(downstream, downstreamBinding.target);
+            const candidates = (removed.bindings || []).filter((binding) => binding.source);
+            const ordered = [
+                ...candidates.filter((binding) => binding.target === downstreamBinding.path),
+                ...candidates.filter((binding) => binding.target === downstreamBinding.target),
+                ...candidates.filter((binding) => binding.target === 'items'),
+                ...candidates
+            ];
+            const seen = new Set();
+            for (const candidate of ordered) {
+                const key = `${candidate.source}.${candidate.path || ''}.${candidate.target}`;
+                if (seen.has(key)) {
+                    continue;
+                }
+                seen.add(key);
+                const source = nodeById(candidate.source);
+                if (!source) {
+                    continue;
+                }
+                const port = outputPortsForNode(source).find((item) => item.path === (candidate.path || ''));
+                if (downstreamProp && port && !typesCompatible(downstreamProp.type, port.type || 'any')) {
+                    continue;
+                }
+                return candidate;
+            }
+            return null;
+        };
+
+        const bridgeBindingsAroundRemovedNode = (removed) => {
+            for (const node of state.graph.nodes) {
+                if (node.id === removed.id) {
+                    continue;
+                }
+                for (const binding of node.bindings || []) {
+                    if (binding.source !== removed.id) {
+                        continue;
+                    }
+                    const candidate = bridgeBindingCandidate(removed, node, binding);
+                    if (!candidate) {
+                        continue;
+                    }
+                    binding.source = candidate.source;
+                    binding.path = candidate.path || '';
+                }
+            }
+        };
+
         const removeNode = (nodeId) => {
+            const removed = nodeById(nodeId);
+            if (!removed) {
+                return;
+            }
+            const removedIndex = state.graph.nodes.findIndex((candidate) => candidate.id === nodeId);
+            bridgeBindingsAroundRemovedNode(removed);
             state.graph.nodes = state.graph.nodes.filter((candidate) => candidate.id !== nodeId);
             state.graph.edges = state.graph.edges.filter((edge) => edge.from !== nodeId && edge.to !== nodeId);
             for (const node of state.graph.nodes) {
                 node.bindings = (node.bindings || []).filter((binding) => binding.source !== nodeId);
             }
-            state.selectedNodeId = state.graph.nodes[0]?.id || null;
+            state.selectedNodeId = state.graph.nodes[Math.min(removedIndex, state.graph.nodes.length - 1)]?.id || null;
+            syncEdgesFromBindings();
+            clearRunResults();
             markDirty();
         };
 

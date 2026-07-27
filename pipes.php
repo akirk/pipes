@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: Pipes
- * Description: A Yahoo Pipes-style WordPress app for composing Abilities API workflows.
+ * Description: Connect WordPress abilities into workflows with filters, transformations, and dashboard outputs.
  * Version: 1.0.0
  * Author: Alex Kirk
  * Text Domain: pipes

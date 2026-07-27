@@ -185,6 +185,118 @@ class App extends BaseApp {
             'meta'                => $this->ability_meta( false, false, false, __( 'Return a compact summary of each node result and note any failed node.', 'pipes' ) ),
         ] );
 
+        $this->register_pipe_ability( 'pipes/list-pipes', [
+            'label'               => __( 'List Pipes', 'pipes' ),
+            'description'         => __( 'Lists saved Pipes workflows owned by the current user.', 'pipes' ),
+            'input_schema'        => [
+                'type'                 => 'object',
+                'properties'           => [
+                    'search' => [
+                        'type'        => 'string',
+                        'description' => __( 'Optional title search text.', 'pipes' ),
+                    ],
+                    'limit'  => [
+                        'type'        => 'integer',
+                        'description' => __( 'Maximum pipes to return. Defaults to 20.', 'pipes' ),
+                        'default'     => 20,
+                    ],
+                ],
+                'additionalProperties' => false,
+            ],
+            'output_schema'       => [
+                'type'       => 'object',
+                'properties' => [
+                    'pipes' => [
+                        'type'  => 'array',
+                        'items' => $this->pipe_summary_schema(),
+                    ],
+                    'total' => [ 'type' => 'integer' ],
+                ],
+            ],
+            'execute_callback'    => [ $this, 'ability_list_pipes' ],
+            'meta'                => $this->ability_meta( true, false, true, __( 'Use this before updating an existing pipe when the user names a pipe but does not provide its ID.', 'pipes' ) ),
+        ] );
+
+        $this->register_pipe_ability( 'pipes/get-pipe', [
+            'label'               => __( 'Get Pipe', 'pipes' ),
+            'description'         => __( 'Returns one saved Pipes workflow, including its editable graph JSON.', 'pipes' ),
+            'input_schema'        => [
+                'type'                 => 'object',
+                'required'             => [ 'pipe_id' ],
+                'properties'           => [
+                    'pipe_id' => [
+                        'type'        => 'integer',
+                        'description' => __( 'Saved pipe post ID from pipes/list-pipes or a prior create/update result.', 'pipes' ),
+                    ],
+                ],
+                'additionalProperties' => false,
+            ],
+            'output_schema'       => [
+                'type'       => 'object',
+                'properties' => [
+                    'pipe' => $this->pipe_schema( true ),
+                ],
+            ],
+            'execute_callback'    => [ $this, 'ability_get_pipe' ],
+            'meta'                => $this->ability_meta( true, false, true, __( 'Inspect the existing graph before updating it. Preserve unrelated nodes, args, bindings, and output nodes unless the user asks to change them.', 'pipes' ) ),
+        ] );
+
+        $this->register_pipe_ability( 'pipes/create-pipe', [
+            'label'               => __( 'Create Pipe', 'pipes' ),
+            'description'         => __( 'Creates a saved Pipes workflow from a title and graph definition.', 'pipes' ),
+            'input_schema'        => [
+                'type'                 => 'object',
+                'required'             => [ 'title', 'graph' ],
+                'properties'           => [
+                    'title' => [
+                        'type'        => 'string',
+                        'description' => __( 'Human-readable pipe name.', 'pipes' ),
+                    ],
+                    'graph' => $this->pipe_graph_schema(),
+                ],
+                'additionalProperties' => false,
+            ],
+            'output_schema'       => [
+                'type'       => 'object',
+                'properties' => [
+                    'pipe' => $this->pipe_schema( true ),
+                ],
+            ],
+            'execute_callback'    => [ $this, 'ability_create_pipe' ],
+            'permission_callback' => [ $this, 'can_edit_pipes' ],
+            'meta'                => $this->ability_meta( false, false, false, __( 'Create complete workflows with nodes and bindings. Prefer output nodes such as pipes/output-dashboard-list or pipes/output-dashboard-text when the user wants visible WordPress output. Use stable node IDs like search, filter, output; bind downstream inputs to upstream output paths.', 'pipes' ) ),
+        ] );
+
+        $this->register_pipe_ability( 'pipes/update-pipe', [
+            'label'               => __( 'Update Pipe', 'pipes' ),
+            'description'         => __( 'Updates an existing saved Pipes workflow title and graph definition.', 'pipes' ),
+            'input_schema'        => [
+                'type'                 => 'object',
+                'required'             => [ 'pipe_id', 'graph' ],
+                'properties'           => [
+                    'pipe_id' => [
+                        'type'        => 'integer',
+                        'description' => __( 'Saved pipe post ID to update.', 'pipes' ),
+                    ],
+                    'title'   => [
+                        'type'        => 'string',
+                        'description' => __( 'Optional replacement title. Omit to keep the existing title.', 'pipes' ),
+                    ],
+                    'graph'   => $this->pipe_graph_schema(),
+                ],
+                'additionalProperties' => false,
+            ],
+            'output_schema'       => [
+                'type'       => 'object',
+                'properties' => [
+                    'pipe' => $this->pipe_schema( true ),
+                ],
+            ],
+            'execute_callback'    => [ $this, 'ability_update_pipe' ],
+            'permission_callback' => [ $this, 'can_edit_pipes' ],
+            'meta'                => $this->ability_meta( false, false, false, __( 'Call pipes/get-pipe first unless the user explicitly provides the complete replacement graph. Preserve unrelated workflow behavior and keep graph node order aligned with execution order.', 'pipes' ) ),
+        ] );
+
         $this->register_pipe_ability( 'pipes/extract-path', [
             'label'               => __( 'Extract Path', 'pipes' ),
             'description'         => __( 'Extracts one dot-path value from an object, array, or scalar.', 'pipes' ),
@@ -582,26 +694,12 @@ class App extends BaseApp {
             }
         }
 
-        $postarr = [
-            'post_type'    => self::POST_TYPE,
-            'post_status'  => 'private',
-            'post_title'   => $title,
-            'post_content' => wp_json_encode( $this->sanitize_graph( $graph ) ),
-            'post_author'  => get_current_user_id(),
-        ];
-
-        if ( $post_id > 0 ) {
-            $postarr['ID'] = $post_id;
-            $result = wp_update_post( wp_slash( $postarr ), true );
-        } else {
-            $result = wp_insert_post( wp_slash( $postarr ), true );
+        $post = $this->save_pipe_post( $post_id, $title, $graph );
+        if ( is_wp_error( $post ) ) {
+            return $post;
         }
 
-        if ( is_wp_error( $result ) ) {
-            return $result;
-        }
-
-        return rest_ensure_response( [ 'pipe' => $this->format_pipe( get_post( $result ), true ) ] );
+        return rest_ensure_response( [ 'pipe' => $this->format_pipe( $post, true ) ] );
     }
 
     public function rest_delete_pipe( \WP_REST_Request $request ) {
@@ -663,6 +761,88 @@ class App extends BaseApp {
         $result['pipe_id'] = $post->ID;
 
         return $result;
+    }
+
+    public function ability_list_pipes( $input ): array {
+        $input  = is_array( $input ) ? $input : [];
+        $limit  = max( 1, min( 100, isset( $input['limit'] ) ? absint( $input['limit'] ) : 20 ) );
+        $search = isset( $input['search'] ) ? sanitize_text_field( (string) $input['search'] ) : '';
+        $args   = [
+            'post_type'      => self::POST_TYPE,
+            'post_status'    => [ 'publish', 'draft', 'private' ],
+            'posts_per_page' => $limit,
+            'orderby'        => 'modified',
+            'order'          => 'DESC',
+            'author'         => get_current_user_id(),
+        ];
+        if ( '' !== $search ) {
+            $args['s'] = $search;
+        }
+
+        $query = new \WP_Query( $args );
+        $pipes = [];
+        foreach ( $query->posts as $post ) {
+            $pipes[] = $this->format_pipe_for_ability( $post, false );
+        }
+
+        return [
+            'pipes' => $pipes,
+            'total' => (int) $query->found_posts,
+        ];
+    }
+
+    public function ability_get_pipe( $input ) {
+        $input = is_array( $input ) ? $input : [];
+        $post  = $this->get_pipe_post( (int) ( $input['pipe_id'] ?? 0 ) );
+        if ( is_wp_error( $post ) ) {
+            return $post;
+        }
+
+        return [
+            'pipe' => $this->format_pipe_for_ability( $post, true ),
+        ];
+    }
+
+    public function ability_create_pipe( $input ) {
+        if ( ! $this->can_edit_pipes() ) {
+            return new \WP_Error( 'pipes_forbidden', __( 'You cannot create pipes.', 'pipes' ) );
+        }
+
+        $input = is_array( $input ) ? $input : [];
+        $title = isset( $input['title'] ) ? sanitize_text_field( (string) $input['title'] ) : '';
+        $graph = isset( $input['graph'] ) && is_array( $input['graph'] ) ? $input['graph'] : [];
+        $post  = $this->save_pipe_post( 0, $title, $graph );
+        if ( is_wp_error( $post ) ) {
+            return $post;
+        }
+
+        return [
+            'pipe' => $this->format_pipe_for_ability( $post, true ),
+        ];
+    }
+
+    public function ability_update_pipe( $input ) {
+        if ( ! $this->can_edit_pipes() ) {
+            return new \WP_Error( 'pipes_forbidden', __( 'You cannot update pipes.', 'pipes' ) );
+        }
+
+        $input   = is_array( $input ) ? $input : [];
+        $pipe_id = (int) ( $input['pipe_id'] ?? 0 );
+        $post    = $this->get_pipe_post( $pipe_id );
+        if ( is_wp_error( $post ) ) {
+            return $post;
+        }
+
+        $title = isset( $input['title'] ) && '' !== (string) $input['title'] ? sanitize_text_field( (string) $input['title'] ) : $post->post_title;
+        $graph = isset( $input['graph'] ) && is_array( $input['graph'] ) ? $input['graph'] : $this->get_pipe_graph( $post );
+        $post  = $this->save_pipe_post( $pipe_id, $title, $graph );
+        if ( is_wp_error( $post ) ) {
+            return $post;
+        }
+
+        return [
+            'pipe' => $this->format_pipe_for_ability( $post, true ),
+        ];
     }
 
     public function ability_extract_path( $input ): array {
@@ -982,7 +1162,7 @@ class App extends BaseApp {
     }
 
     public function register_ai_assistant_ability_domains( array $domains ): array {
-        $domains['pipes'] = 'pipes, workflows, flows, yahoo pipes, connect abilities, ability pipeline, automation';
+        $domains['pipes'] = 'pipes, workflows, flows, yahoo pipes, connect abilities, ability pipeline, automation, create pipe, edit pipe, dashboard output';
         return $domains;
     }
 
@@ -1023,6 +1203,110 @@ class App extends BaseApp {
                     'type' => 'integer',
                 ],
             ],
+        ];
+    }
+
+    private function pipe_summary_schema(): array {
+        return [
+            'type'       => 'object',
+            'properties' => [
+                'id'       => [ 'type' => 'integer' ],
+                'title'    => [ 'type' => 'string' ],
+                'modified' => [ 'type' => 'string' ],
+                'edit_url' => [ 'type' => 'string' ],
+            ],
+        ];
+    }
+
+    private function pipe_schema( bool $include_graph ): array {
+        $schema = $this->pipe_summary_schema();
+        if ( $include_graph ) {
+            $schema['properties']['graph'] = $this->pipe_graph_schema();
+        }
+
+        return $schema;
+    }
+
+    private function pipe_graph_schema(): array {
+        return [
+            'type'                 => 'object',
+            'description'          => __( 'Pipes graph. Nodes execute in dependency order from edges/bindings; list mode displays nodes in array order.', 'pipes' ),
+            'properties'           => [
+                'nodes' => [
+                    'type'        => 'array',
+                    'description' => __( 'Workflow boxes. Use ability_id values from the WordPress Abilities API, including glue abilities like pipes/filter-items and output abilities like pipes/output-dashboard-list.', 'pipes' ),
+                    'items'       => [
+                        'type'                 => 'object',
+                        'properties'           => [
+                            'id'         => [
+                                'type'        => 'string',
+                                'description' => __( 'Stable node ID used by bindings, e.g. search, filter, output.', 'pipes' ),
+                            ],
+                            'ability_id' => [
+                                'type'        => 'string',
+                                'description' => __( 'Registered ability ID to execute at this node.', 'pipes' ),
+                            ],
+                            'label'      => [
+                                'type'        => 'string',
+                                'description' => __( 'User-facing node label.', 'pipes' ),
+                            ],
+                            'args'       => [
+                                'type'        => 'object',
+                                'description' => __( 'Base input arguments for the ability. Bound inputs should usually be omitted here.', 'pipes' ),
+                            ],
+                            'bindings'   => [
+                                'type'        => 'array',
+                                'description' => __( 'Input bindings from upstream node result paths.', 'pipes' ),
+                                'items'       => [
+                                    'type'                 => 'object',
+                                    'properties'           => [
+                                        'target' => [
+                                            'type'        => 'string',
+                                            'description' => __( 'Input property name on this node.', 'pipes' ),
+                                        ],
+                                        'source' => [
+                                            'type'        => 'string',
+                                            'description' => __( 'Upstream node ID.', 'pipes' ),
+                                        ],
+                                        'path'   => [
+                                            'type'        => 'string',
+                                            'description' => __( 'Dot path within the upstream result; empty means the whole result.', 'pipes' ),
+                                        ],
+                                    ],
+                                    'required'             => [ 'target', 'source' ],
+                                    'additionalProperties' => false,
+                                ],
+                            ],
+                            'position'   => [
+                                'type'                 => 'object',
+                                'description'          => __( 'Visual canvas position.', 'pipes' ),
+                                'properties'           => [
+                                    'x' => [ 'type' => 'integer' ],
+                                    'y' => [ 'type' => 'integer' ],
+                                ],
+                                'additionalProperties' => false,
+                            ],
+                        ],
+                        'required'             => [ 'id', 'ability_id' ],
+                        'additionalProperties' => false,
+                    ],
+                ],
+                'edges' => [
+                    'type'        => 'array',
+                    'description' => __( 'Visual/dependency edges between node IDs. Bindings also create execution dependencies.', 'pipes' ),
+                    'items'       => [
+                        'type'                 => 'object',
+                        'properties'           => [
+                            'from' => [ 'type' => 'string' ],
+                            'to'   => [ 'type' => 'string' ],
+                        ],
+                        'required'             => [ 'from', 'to' ],
+                        'additionalProperties' => false,
+                    ],
+                ],
+            ],
+            'required'             => [ 'nodes' ],
+            'additionalProperties' => false,
         ];
     }
 
@@ -1409,6 +1693,52 @@ class App extends BaseApp {
         }
 
         return $pipe;
+    }
+
+    private function format_pipe_for_ability( \WP_Post $post, bool $include_graph = false ): array {
+        $pipe = $this->format_pipe( $post, $include_graph );
+        $pipe['edit_url'] = $this->get_pipe_edit_url( $post );
+        return $pipe;
+    }
+
+    private function save_pipe_post( int $post_id, string $title, array $graph ) {
+        $title = sanitize_text_field( $title );
+        if ( '' === $title ) {
+            return new \WP_Error( 'pipes_title_required', __( 'Pipe title is required.', 'pipes' ), [ 'status' => 400 ] );
+        }
+
+        if ( $post_id > 0 ) {
+            $post = $this->get_pipe_post( $post_id );
+            if ( is_wp_error( $post ) ) {
+                return $post;
+            }
+        }
+
+        $postarr = [
+            'post_type'    => self::POST_TYPE,
+            'post_status'  => 'private',
+            'post_title'   => $title,
+            'post_content' => wp_json_encode( $this->sanitize_graph( $graph ) ),
+            'post_author'  => get_current_user_id(),
+        ];
+
+        if ( $post_id > 0 ) {
+            $postarr['ID'] = $post_id;
+            $result = wp_update_post( wp_slash( $postarr ), true );
+        } else {
+            $result = wp_insert_post( wp_slash( $postarr ), true );
+        }
+
+        if ( is_wp_error( $result ) ) {
+            return $result;
+        }
+
+        $post = get_post( (int) $result );
+        if ( ! $post instanceof \WP_Post ) {
+            return new \WP_Error( 'pipes_save_failed', __( 'Pipe could not be loaded after saving.', 'pipes' ), [ 'status' => 500 ] );
+        }
+
+        return $post;
     }
 
     private function get_pipe_graph( \WP_Post $post ): array {

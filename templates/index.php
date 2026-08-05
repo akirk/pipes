@@ -1532,6 +1532,7 @@
             if (paths.length >= 40) {
                 return paths;
             }
+            const isArrayItemPath = /^\d+$/.test(String(prefix).split('.').pop() || '');
             if (value === null || typeof value !== 'object') {
                 if (prefix) {
                     paths.push({ path: prefix, value });
@@ -1547,7 +1548,7 @@
                 });
                 return paths;
             }
-            if (prefix) {
+            if (prefix && !isArrayItemPath) {
                 paths.push({ path: prefix, value });
             }
             Object.entries(value).slice(0, 16).forEach(([key, item]) => {

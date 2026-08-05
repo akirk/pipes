@@ -412,6 +412,10 @@
             display: grid;
             gap: 0.45rem;
         }
+        .list-arg.is-flat {
+            display: grid;
+            gap: 0.45rem;
+        }
         .list-arg summary {
             color: var(--pipes-muted);
             cursor: pointer;
@@ -764,6 +768,11 @@
             border-top: 0;
             margin-top: 0;
             padding-top: 0;
+        }
+        .input-popover .list-arg {
+            background: transparent;
+            border: 0;
+            padding: 0;
         }
         .input-popover-header {
             align-items: center;
@@ -2969,7 +2978,7 @@
             graph.append(popover);
             renderListArgs(node, props, $('[data-visual-input-args]', popover), {
                 propName: prop.name,
-                forceOpen: true,
+                flat: true,
                 hideTitle: true,
                 scope: 'visual'
             });
@@ -3523,28 +3532,39 @@
                 const binding = (node.bindings || []).find((candidate) => candidate.target === prop.name);
                 const sourceNodes = compatibleBindingSourceNodesFor(node, prop);
                 const argValue = ensureNodeArgs(node)[prop.name];
-                const row = document.createElement('details');
+                const useFlatRow = !!options.flat;
+                const row = document.createElement(useFlatRow ? 'div' : 'details');
                 row.className = 'list-arg';
-                row.dataset.listArgDetails = `${node.id}.${prop.name}`;
-                row.open = !!options.forceOpen || state.openListArg === row.dataset.listArgDetails;
-                if (node.ability_id === 'pipes/format-date-field' && ['value', 'path', 'date_format'].includes(prop.name)) {
-                    row.open = true;
+                if (useFlatRow) {
+                    row.classList.add('is-flat');
                 }
-                const summary = document.createElement('summary');
-                summary.textContent = `${prop.name}${prop.required ? ' *' : ''}`;
-                summary.addEventListener('click', () => {
-                    state.selectedNodeId = node.id;
-                    state.activeBindingTarget = prop.name;
-                    state.openListArg = `${node.id}.${prop.name}`;
-                    renderGraph();
-                });
-                row.append(summary);
-                row.addEventListener('toggle', () => {
-                    state.openListArg = row.open ? row.dataset.listArgDetails : '';
-                    if (row.open) {
+                row.dataset.listArgDetails = `${node.id}.${prop.name}`;
+                if (useFlatRow) {
+                    row.addEventListener('click', () => {
+                        state.selectedNodeId = node.id;
                         state.activeBindingTarget = prop.name;
+                    });
+                } else {
+                    row.open = !!options.forceOpen || state.openListArg === row.dataset.listArgDetails;
+                    if (node.ability_id === 'pipes/format-date-field' && ['value', 'path', 'date_format'].includes(prop.name)) {
+                        row.open = true;
                     }
-                });
+                    const summary = document.createElement('summary');
+                    summary.textContent = `${prop.name}${prop.required ? ' *' : ''}`;
+                    summary.addEventListener('click', () => {
+                        state.selectedNodeId = node.id;
+                        state.activeBindingTarget = prop.name;
+                        state.openListArg = `${node.id}.${prop.name}`;
+                        renderGraph();
+                    });
+                    row.append(summary);
+                    row.addEventListener('toggle', () => {
+                        state.openListArg = row.open ? row.dataset.listArgDetails : '';
+                        if (row.open) {
+                            state.activeBindingTarget = prop.name;
+                        }
+                    });
+                }
 
                 if (node.ability_id === 'pipes/output-dashboard-list' && prop.name === 'columns') {
                     const hasConfiguredColumns = Array.isArray(ensureNodeArgs(node).columns);
@@ -3588,6 +3608,15 @@
                         description.textContent = prop.description;
                         row.append(description);
                     }
+                    container.append(row);
+                    continue;
+                }
+
+                if (useFlatRow && binding) {
+                    const notice = document.createElement('div');
+                    notice.className = 'notice';
+                    notice.textContent = 'Bound from previous output. Remove the binding with the x on the input port to edit.';
+                    row.append(notice);
                     container.append(row);
                     continue;
                 }
@@ -3640,7 +3669,7 @@
                     ['manual', 'Predefined', setManualMode],
                     ['ask', 'Ask user', setAskMode]
                 ];
-                if (sourceNodes.length || binding) {
+                if (!useFlatRow && (sourceNodes.length || binding)) {
                     modeOptions.push(['binding', 'Previous output', setBindingMode]);
                 }
                 for (const [value, label, handler] of modeOptions) {
@@ -3667,7 +3696,7 @@
                 }
                 row.append(modeGroup);
 
-                if (sourceNodes.length || binding) {
+                if (!useFlatRow && (sourceNodes.length || binding)) {
                     const bindSelect = document.createElement('select');
                     const chooseSource = document.createElement('option');
                     chooseSource.value = '';

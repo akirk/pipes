@@ -915,6 +915,8 @@
             title: 'Untitled Pipe',
             graph: { nodes: [], edges: [] },
             lastRunResults: {},
+            runOutput: '{}',
+            runError: '',
             activeBindingTarget: '',
             builderMode: window.matchMedia('(max-width: 760px)').matches ? 'list' : 'visual',
             listAddOpen: false,
@@ -959,12 +961,26 @@
         };
 
         const setRunError = (message = '') => {
+            state.runError = message;
             const runError = $('[data-run-error]');
             if (!runError) {
                 return;
             }
             runError.textContent = message;
             runError.hidden = !message;
+        };
+
+        const setRunOutput = (value) => {
+            state.runOutput = value;
+            const output = $('[data-output]');
+            if (output) {
+                output.textContent = value;
+            }
+        };
+
+        const renderRunOutput = () => {
+            setRunError(state.runError);
+            setRunOutput(state.runOutput);
         };
 
         const markDirty = () => {
@@ -975,7 +991,7 @@
         const clearRunResults = () => {
             state.lastRunResults = {};
             setRunError();
-            $('[data-output]').textContent = '{}';
+            setRunOutput('{}');
         };
 
         const normalizeArgs = (args) => {
@@ -1682,7 +1698,7 @@
             state.listAddSearch = '';
             state.dirty = false;
             $('[data-title]').value = state.title;
-            $('[data-output]').textContent = '{}';
+            clearRunResults();
             setPipeUrl();
             setStatus('Not saved');
             render();
@@ -1704,7 +1720,7 @@
             state.listAddSearch = '';
             state.dirty = false;
             $('[data-title]').value = state.title;
-            $('[data-output]').textContent = '{}';
+            clearRunResults();
             setPipeUrl(state.selectedPipeId);
             setStatus('Starter pipe loaded');
             await loadPipes();
@@ -1726,7 +1742,7 @@
             state.listAddSearch = '';
             state.dirty = false;
             $('[data-title]').value = state.title;
-            $('[data-output]').textContent = '{}';
+            clearRunResults();
             if (updateUrl) {
                 setPipeUrl(state.selectedPipeId);
             }
@@ -1786,17 +1802,21 @@
                     })
                 });
                 state.lastRunResults = data.results || {};
-                $('[data-output]').textContent = JSON.stringify(data, null, 2);
+                setRunOutput(JSON.stringify(data, null, 2));
                 setRunError();
                 setStatus(state.dirty ? 'Unsaved changes' : 'Run complete');
                 render();
             } catch (error) {
                 const errorOutput = error.response || { message: error.message, data: error.data };
+                setRunOutput([
+                    error.message,
+                    '',
+                    JSON.stringify(errorOutput, null, 2)
+                ].join('\n'));
                 if (error.data?.results) {
                     state.lastRunResults = error.data.results;
                     render();
                 }
-                $('[data-output]').textContent = JSON.stringify(errorOutput, null, 2);
                 setRunError(error.message);
                 setStatus('Run failed', true);
             }
@@ -2983,6 +3003,7 @@
             renderGraph();
             renderListBuilder();
             renderInspector();
+            renderRunOutput();
         };
 
         $('[data-title]').addEventListener('input', (event) => {

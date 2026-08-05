@@ -640,6 +640,7 @@
             overflow-wrap: anywhere;
             padding: 0.32rem 0.42rem;
             text-align: left;
+            touch-action: none;
         }
         .port-row {
             position: relative;
@@ -1836,7 +1837,7 @@
             };
         };
 
-        const startConnectionDraft = (sourceId, path, event) => {
+        const startConnectionDraft = (sourceId, path, event, options = {}) => {
             state.connectionDraft = {
                 sourceId,
                 path: path || '',
@@ -1844,7 +1845,12 @@
             };
             state.visualInputPopover = null;
             setWorkspaceMessage('Choose an input port to connect this output.');
-            renderGraph();
+            if (options.preserveGraph) {
+                $('.input-popover')?.remove();
+                renderEdges();
+            } else {
+                renderGraph();
+            }
         };
 
         const updateConnectionDraft = (event) => {
@@ -1877,6 +1883,84 @@
                 renderGraph();
             }
             return true;
+        };
+
+        const inputPortAtPoint = (clientX, clientY) => {
+            const target = document.elementFromPoint(clientX, clientY)?.closest('.port[data-port-kind="input"]');
+            if (!target) {
+                return null;
+            }
+            const node = nodeById(target.dataset.nodeId);
+            const portName = target.dataset.portName || '';
+            if (!node || !portName) {
+                return null;
+            }
+            return { node, portName };
+        };
+
+        const attachOutputPortDrag = (output, node, port) => {
+            let drag = null;
+            output.addEventListener('pointerdown', (event) => {
+                if (event.button !== 0) {
+                    return;
+                }
+                event.stopPropagation();
+                drag = {
+                    pointerId: event.pointerId,
+                    startX: event.clientX,
+                    startY: event.clientY,
+                    moved: false
+                };
+                output.setPointerCapture(event.pointerId);
+                startConnectionDraft(node.id, port.path, event, { preserveGraph: true });
+            });
+            output.addEventListener('pointermove', (event) => {
+                if (!drag || drag.pointerId !== event.pointerId) {
+                    return;
+                }
+                event.preventDefault();
+                event.stopPropagation();
+                const dx = event.clientX - drag.startX;
+                const dy = event.clientY - drag.startY;
+                if (Math.abs(dx) + Math.abs(dy) > 3) {
+                    drag.moved = true;
+                }
+                updateConnectionDraft(event);
+            });
+            const finish = (event) => {
+                if (!drag || drag.pointerId !== event.pointerId) {
+                    return;
+                }
+                event.preventDefault();
+                event.stopPropagation();
+                const target = drag.moved ? inputPortAtPoint(event.clientX, event.clientY) : null;
+                if (output.hasPointerCapture(event.pointerId)) {
+                    output.releasePointerCapture(event.pointerId);
+                }
+                if (target) {
+                    completeConnectionDraft(target.node, target.portName);
+                }
+                if (drag.moved) {
+                    output.dataset.connectionDragged = 'true';
+                    window.setTimeout(() => {
+                        delete output.dataset.connectionDragged;
+                    }, 0);
+                }
+                drag = null;
+            };
+            output.addEventListener('pointerup', finish);
+            output.addEventListener('pointercancel', (event) => {
+                if (!drag || drag.pointerId !== event.pointerId) {
+                    return;
+                }
+                event.preventDefault();
+                event.stopPropagation();
+                if (output.hasPointerCapture(event.pointerId)) {
+                    output.releasePointerCapture(event.pointerId);
+                }
+                cancelConnectionDraft();
+                drag = null;
+            });
         };
 
         const defaultBindingForNode = (node, props) => {
@@ -2481,8 +2565,13 @@
                     }
                     output.title = port.title || (port.value ? `${port.label}: ${port.value}` : port.label);
                     output.textContent = port.label;
+                    attachOutputPortDrag(output, node, port);
                     output.addEventListener('click', (event) => {
                         event.stopPropagation();
+                        if (output.dataset.connectionDragged === 'true') {
+                            event.preventDefault();
+                            return;
+                        }
                         startConnectionDraft(node.id, port.path, event);
                     });
                     outputPorts.append(output);

@@ -124,6 +124,7 @@
             min-width: 0;
             display: grid;
             grid-template-rows: auto auto 1fr auto;
+            min-height: 0;
         }
         .topbar {
             display: grid;
@@ -199,6 +200,29 @@
         }
         .search {
             margin-bottom: 0.75rem;
+        }
+        .quick-steps {
+            display: grid;
+            gap: 0.45rem;
+            margin-bottom: 0.95rem;
+        }
+        .quick-step-grid {
+            display: grid;
+            gap: 0.45rem;
+            grid-template-columns: repeat(auto-fit, minmax(5.5rem, 1fr));
+        }
+        .quick-step {
+            display: grid;
+            gap: 0.18rem;
+            min-width: 0;
+            padding: 0.65rem;
+            text-align: left;
+        }
+        .quick-step strong {
+            font-size: 0.9rem;
+        }
+        .quick-step .meta {
+            line-height: 1.25;
         }
         .list {
             display: grid;
@@ -558,11 +582,6 @@
             margin: 0 0 0.35rem;
             padding-right: 2rem;
         }
-        .node .node-id {
-            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-            color: var(--pipes-muted);
-            font-size: 0.76rem;
-        }
         .node-delete {
             align-items: center;
             display: inline-flex;
@@ -574,6 +593,25 @@
             right: 0.55rem;
             top: 0.55rem;
             width: 1.75rem;
+        }
+        .node-debug-preview {
+            border: 1px solid var(--pipes-border);
+            border-radius: var(--pipes-radius);
+            background: var(--pipes-surface-alt);
+            color: var(--pipes-text);
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+            font-size: 0.76rem;
+            line-height: 1.35;
+            margin-top: 0.6rem;
+            max-height: 8rem;
+            overflow: auto;
+            padding: 0.55rem;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
+        .node-debug-preview.is-empty {
+            color: var(--pipes-muted);
+            font-family: inherit;
         }
         .port-groups {
             display: grid;
@@ -719,6 +757,11 @@
             background: var(--pipes-surface);
             padding: 1rem;
         }
+        .workspace:not(.builder-list) .output {
+            max-height: 15rem;
+            overflow: auto;
+            box-shadow: 0 -6px 18px color-mix(in srgb, #000 7%, transparent);
+        }
         .output pre {
             max-height: 18rem;
             overflow: auto;
@@ -730,6 +773,9 @@
             white-space: pre-wrap;
             overflow-wrap: anywhere;
             font-size: 0.82rem;
+        }
+        .workspace:not(.builder-list) .output pre {
+            max-height: 10rem;
         }
         .run-error {
             border: 1px solid color-mix(in srgb, var(--pipes-danger) 38%, var(--pipes-border));
@@ -911,6 +957,7 @@
                 <div class="ability-search-header">
                     <h2 class="section-title">Abilities</h2>
                     <input class="search" type="search" data-ability-search placeholder="Search abilities">
+                    <div class="quick-steps" data-quick-steps hidden></div>
                 </div>
                 <div class="list" data-abilities-list>
                     <div class="notice">Loading abilities...</div>
@@ -957,8 +1004,8 @@
                 </div>
             </section>
 
-            <section class="output">
-                <strong>Run Output</strong>
+            <section class="output" data-debug-output>
+                <strong>Debug Output</strong>
                 <div class="run-error" data-run-error hidden></div>
                 <pre data-output>{}</pre>
             </section>
@@ -996,9 +1043,12 @@
             listAddSearch: '',
             openListArg: '',
             visualInputPopover: null,
+            connectionDraft: null,
             inspectorOpen: false,
             dirty: false
         };
+
+        const draftKey = 'pipes.builderDraft.v1';
 
         const $ = (selector, root = document) => root.querySelector(selector);
         const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
@@ -1072,9 +1122,75 @@
             setRunOutput(state.runOutput);
         };
 
+        const showDebugOutput = () => {
+            if (state.builderMode !== 'visual') {
+                return;
+            }
+            $('[data-debug-output]')?.scrollIntoView({ block: 'end', behavior: 'smooth' });
+        };
+
+        const saveLocalDraft = () => {
+            try {
+                window.localStorage.setItem(draftKey, JSON.stringify({
+                    selectedPipeId: state.selectedPipeId,
+                    selectedNodeId: state.selectedNodeId,
+                    title: state.title,
+                    graph: state.graph,
+                    activeBindingTarget: state.activeBindingTarget,
+                    builderMode: state.builderMode,
+                    savedAt: new Date().toISOString()
+                }));
+            } catch (error) {
+                // Local drafts are best-effort; saving the pipe remains the durable path.
+            }
+        };
+
+        const clearLocalDraft = () => {
+            try {
+                window.localStorage.removeItem(draftKey);
+            } catch (error) {
+                // Ignore storage errors.
+            }
+        };
+
+        const readLocalDraft = () => {
+            try {
+                return JSON.parse(window.localStorage.getItem(draftKey) || 'null');
+            } catch (error) {
+                return null;
+            }
+        };
+
+        const restoreLocalDraft = (draft) => {
+            if (!draft || !draft.graph || !Array.isArray(draft.graph.nodes)) {
+                return false;
+            }
+            state.selectedPipeId = draft.selectedPipeId || null;
+            state.selectedNodeId = draft.selectedNodeId || draft.graph.nodes[0]?.id || null;
+            state.title = draft.title || 'Untitled Pipe';
+            state.graph = draft.graph || { nodes: [], edges: [] };
+            normalizeGraphArgs();
+            state.lastRunResults = {};
+            state.activeBindingTarget = draft.activeBindingTarget || '';
+            state.builderMode = draft.builderMode === 'list' ? 'list' : 'visual';
+            state.listAddOpen = false;
+            state.listAddIndex = null;
+            state.listAddSearch = '';
+            state.visualInputPopover = null;
+            state.connectionDraft = null;
+            state.dirty = true;
+            $('[data-title]').value = state.title;
+            clearRunResults();
+            setPipeUrl(state.selectedPipeId);
+            render();
+            setStatus(`Restored unsaved draft${draft.savedAt ? ` from ${new Date(draft.savedAt).toLocaleString()}` : ''}`);
+            return true;
+        };
+
         const markDirty = () => {
             state.dirty = true;
             setStatus('Unsaved changes');
+            saveLocalDraft();
         };
 
         const clearRunResults = () => {
@@ -1108,6 +1224,7 @@
                     nodeIds.has(binding.source)
                 ));
             }
+            syncEdgesFromBindings();
         };
 
         const savedArgsStatus = () => {
@@ -1419,6 +1536,7 @@
         };
 
         const isOutputNode = (node) => String(node.ability_id || '').startsWith('pipes/output-');
+        const isDebugOutputNode = (node) => String(node.ability_id || '') === 'pipes/output-debug';
         const isDashboardOutputNode = (node) => [
             'pipes/output-dashboard-text',
             'pipes/output-dashboard-list'
@@ -1526,6 +1644,21 @@
             return String(value);
         };
 
+        const debugPreviewValue = (node) => {
+            const run = state.lastRunResults[node.id];
+            if (!run) {
+                return undefined;
+            }
+            if (run.input && Object.prototype.hasOwnProperty.call(run.input, 'value')) {
+                return run.input.value;
+            }
+            const result = run.result;
+            if (result && typeof result === 'object' && Object.prototype.hasOwnProperty.call(result, 'value')) {
+                return result.value;
+            }
+            return run.result;
+        };
+
         const ensureActiveBindingTarget = (node, props) => {
             if (!node) {
                 state.activeBindingTarget = '';
@@ -1539,28 +1672,34 @@
             return state.activeBindingTarget;
         };
 
-        const bindPathToActiveInput = (sourceId, path) => {
-            const node = selectedNode();
-            if (!node || !state.activeBindingTarget) {
-                setWorkspaceMessage('Select an input before choosing an output path.', true);
-                return;
+        const bindPathToInput = (targetNode, targetName, sourceId, path) => {
+            if (!targetNode || !targetName) {
+                return false;
             }
-            if (node.id === sourceId) {
-                return;
+            if (targetNode.id === sourceId) {
+                return false;
             }
-            node.bindings = node.bindings || [];
-            const existing = node.bindings.find((binding) => binding.target === state.activeBindingTarget);
+            const source = nodeById(sourceId);
+            const inputProp = inputPropForNode(targetNode, targetName);
+            const outputPort = source ? outputPortsForNode(source).find((port) => port.path === (path || '')) : null;
+            if (inputProp && outputPort && !typesCompatible(inputProp.type, outputPort.type || 'any')) {
+                setWorkspaceMessage(`Cannot bind ${outputPort.label || 'output'} to ${targetName}; the types do not match.`, true);
+                return false;
+            }
+            targetNode.bindings = targetNode.bindings || [];
+            const existing = targetNode.bindings.find((binding) => binding.target === targetName);
             if (existing) {
                 existing.source = sourceId;
                 existing.path = path;
             } else {
-                node.bindings.push({ target: state.activeBindingTarget, source: sourceId, path });
+                targetNode.bindings.push({ target: targetName, source: sourceId, path });
             }
-            delete ensureNodeArgs(node)[state.activeBindingTarget];
+            delete ensureNodeArgs(targetNode)[targetName];
             syncEdgesFromBindings();
             markDirty();
             setWorkspaceMessage();
             render();
+            return true;
         };
 
         const removeBindingTarget = (node, target) => {
@@ -1570,6 +1709,57 @@
             }
             syncEdgesFromBindings();
             markDirty();
+        };
+
+        const graphPointerPoint = (event) => {
+            const graphRect = $('[data-graph]').getBoundingClientRect();
+            return {
+                x: event.clientX - graphRect.left,
+                y: event.clientY - graphRect.top
+            };
+        };
+
+        const startConnectionDraft = (sourceId, path, event) => {
+            state.connectionDraft = {
+                sourceId,
+                path: path || '',
+                pointer: graphPointerPoint(event)
+            };
+            state.visualInputPopover = null;
+            setWorkspaceMessage('Choose an input port to connect this output.');
+            renderGraph();
+        };
+
+        const updateConnectionDraft = (event) => {
+            if (!state.connectionDraft) {
+                return;
+            }
+            state.connectionDraft.pointer = graphPointerPoint(event);
+            renderEdges();
+        };
+
+        const cancelConnectionDraft = () => {
+            if (!state.connectionDraft) {
+                return;
+            }
+            state.connectionDraft = null;
+            setWorkspaceMessage();
+            renderGraph();
+        };
+
+        const completeConnectionDraft = (targetNode, targetName) => {
+            const draft = state.connectionDraft;
+            if (!draft) {
+                return false;
+            }
+            state.connectionDraft = null;
+            state.selectedNodeId = targetNode.id;
+            state.activeBindingTarget = targetName;
+            state.openListArg = `${targetNode.id}.${targetName}`;
+            if (!bindPathToInput(targetNode, targetName, draft.sourceId, draft.path)) {
+                renderGraph();
+            }
+            return true;
         };
 
         const defaultBindingForNode = (node, props) => {
@@ -1585,60 +1775,6 @@
             schemaProperties(abilityById(node.ability_id)?.input_schema)
                 .find((prop) => prop.name === propName)
         );
-
-        const outputPortForInput = (source, inputProp) => (
-            compatibleOutputPortsFor(source, inputProp)[0] || null
-        );
-
-        const firstCompatibleInputBinding = (target, source) => {
-            const props = schemaProperties(abilityById(target.ability_id)?.input_schema);
-            for (const prop of props) {
-                if (prop.name === 'columns') {
-                    continue;
-                }
-                const port = outputPortForInput(source, prop);
-                if (port) {
-                    return { target: prop.name, source: source.id, path: port.path };
-                }
-            }
-            return null;
-        };
-
-        const firstCompatibleOutputBinding = (target, source, targetPropName) => {
-            const prop = inputPropForNode(target, targetPropName);
-            if (!prop) {
-                return null;
-            }
-            const port = outputPortForInput(source, prop);
-            return port ? { target: targetPropName, source: source.id, path: port.path } : null;
-        };
-
-        const autoBindInsertedNode = (node, previous, next) => {
-            if (previous) {
-                const binding = firstCompatibleInputBinding(node, previous);
-                if (binding) {
-                    node.bindings = [binding];
-                    delete ensureNodeArgs(node)[binding.target];
-                }
-            }
-
-            if (!next || !previous) {
-                return;
-            }
-
-            next.bindings = next.bindings || [];
-            for (const binding of next.bindings) {
-                if (binding.source !== previous.id) {
-                    continue;
-                }
-                const replacement = firstCompatibleOutputBinding(next, node, binding.target);
-                if (!replacement) {
-                    continue;
-                }
-                binding.source = replacement.source;
-                binding.path = replacement.path;
-            }
-        };
 
         const formatArgValue = (value) => {
             if (value === undefined || value === null) {
@@ -1776,8 +1912,6 @@
         const addNode = (ability, insertIndex = state.graph.nodes.length) => {
             const index = Math.max(0, Math.min(insertIndex, state.graph.nodes.length));
             const id = `node-${Date.now().toString(36)}-${index}`;
-            const previous = state.graph.nodes[index - 1] || null;
-            const next = state.graph.nodes[index] || null;
             const mobile = window.matchMedia('(max-width: 760px)').matches;
             const node = {
                 id,
@@ -1788,12 +1922,6 @@
                 position: mobile ? { x: 36, y: 42 + index * 245 } : { x: 28 + index * 320, y: 42 + (index % 3) * 48 }
             };
             state.graph.nodes.splice(index, 0, node);
-            state.graph.nodes.forEach((candidate, nextIndex) => {
-                candidate.position = mobile ?
-                    { x: 36, y: 42 + nextIndex * 245 } :
-                    { ...candidate.position, x: 28 + nextIndex * 320 };
-            });
-            autoBindInsertedNode(node, previous, next);
             syncEdgesFromBindings();
             clearRunResults();
             state.selectedNodeId = id;
@@ -1802,6 +1930,7 @@
         };
 
         const newPipe = () => {
+            clearLocalDraft();
             state.selectedPipeId = null;
             state.selectedNodeId = null;
             state.title = 'Untitled Pipe';
@@ -1812,6 +1941,7 @@
             state.listAddIndex = null;
             state.listAddSearch = '';
             state.visualInputPopover = null;
+            state.connectionDraft = null;
             state.dirty = false;
             $('[data-title]').value = state.title;
             clearRunResults();
@@ -1837,7 +1967,9 @@
             state.listAddIndex = null;
             state.listAddSearch = '';
             state.visualInputPopover = null;
+            state.connectionDraft = null;
             state.dirty = false;
+            clearLocalDraft();
             $('[data-title]').value = state.title;
             clearRunResults();
             setWorkspaceMessage();
@@ -1861,7 +1993,9 @@
             state.listAddIndex = null;
             state.listAddSearch = '';
             state.visualInputPopover = null;
+            state.connectionDraft = null;
             state.dirty = false;
+            clearLocalDraft();
             $('[data-title]').value = state.title;
             clearRunResults();
             setWorkspaceMessage();
@@ -1886,6 +2020,7 @@
             state.graph = data.pipe.graph;
             normalizeGraphArgs();
             state.dirty = false;
+            clearLocalDraft();
             $('[data-title]').value = state.title;
             setPipeUrl(state.selectedPipeId);
             await loadPipes();
@@ -1931,6 +2066,7 @@
                 setWorkspaceMessage();
                 setStatus(state.dirty ? 'Unsaved changes' : 'Run complete');
                 render();
+                showDebugOutput();
             } catch (error) {
                 const errorOutput = error.response || { message: error.message, data: error.data };
                 const outputText = [
@@ -1946,6 +2082,7 @@
                 }
                 setWorkspaceMessage(error.message, true);
                 setStatus('Run failed', true);
+                showDebugOutput();
             }
         };
 
@@ -1958,6 +2095,7 @@
         const loadAbilities = async () => {
             const data = await request('abilities');
             state.abilities = data.abilities || [];
+            renderQuickSteps();
             renderAbilities();
         };
 
@@ -2022,6 +2160,53 @@
             }
         };
 
+        const renderQuickSteps = () => {
+            const container = $('[data-quick-steps]');
+            if (!container) {
+                return;
+            }
+            const quickSteps = [
+                {
+                    id: 'pipes/filter-items',
+                    title: 'Filter',
+                    description: 'Keep matching items'
+                },
+                {
+                    id: 'pipes/limit-items',
+                    title: 'Limit',
+                    description: 'Take the first items'
+                },
+                {
+                    id: 'pipes/output-debug',
+                    title: 'Debug',
+                    description: 'Inspect a value'
+                }
+            ].map((step) => ({ ...step, ability: abilityById(step.id) }))
+                .filter((step) => step.ability);
+
+            container.hidden = !quickSteps.length;
+            if (!quickSteps.length) {
+                container.innerHTML = '';
+                return;
+            }
+
+            container.innerHTML = `
+                <div class="meta">Common steps</div>
+                <div class="quick-step-grid"></div>
+            `;
+            const grid = $('.quick-step-grid', container);
+            for (const step of quickSteps) {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'quick-step';
+                button.innerHTML = '<strong></strong><span class="meta"></span>';
+                $('strong', button).textContent = step.title;
+                $('.meta', button).textContent = step.description;
+                button.addEventListener('click', () => addNode(step.ability));
+                grid.append(button);
+            }
+        };
+
         const renderExamples = () => {
             const list = $('[data-examples-list]');
             if (!state.examples.length) {
@@ -2070,9 +2255,9 @@
                 element.innerHTML = `
                     <button type="button" class="node-delete danger" data-node-delete aria-label="Remove node" title="Remove node">×</button>
                     <h2></h2>
-                    <div class="node-id"></div>
                     <p class="meta"></p>
                     <div class="badge-row"></div>
+                    <div data-node-debug-preview></div>
                     <div class="port-groups">
                         <div>
                             <div class="port-group-title">Inputs</div>
@@ -2085,7 +2270,6 @@
                     </div>
                 `;
                 $('h2', element).textContent = node.label || ability?.label || node.ability_id;
-                $('.node-id', element).textContent = node.id;
                 $('p', element).textContent = ability?.description || '';
                 const badges = $('.badge-row', element);
                 if (ability?.readonly) {
@@ -2099,6 +2283,16 @@
                 }
                 if (state.lastRunResults[node.id]) {
                     badges.append(badge('has output'));
+                }
+                const debugContainer = $('[data-node-debug-preview]', element);
+                if (isDebugOutputNode(node)) {
+                    const preview = document.createElement('pre');
+                    const value = debugPreviewValue(node);
+                    preview.className = `node-debug-preview ${value === undefined ? 'is-empty' : ''}`;
+                    preview.textContent = value === undefined ? 'Run the pipe to inspect the bound value here.' : compactPreview(value);
+                    debugContainer.append(preview);
+                } else {
+                    debugContainer.remove();
                 }
                 $('[data-node-delete]', element).addEventListener('click', (event) => {
                     event.stopPropagation();
@@ -2125,6 +2319,9 @@
                     input.textContent = port.label;
                     input.addEventListener('click', (event) => {
                         event.stopPropagation();
+                        if (completeConnectionDraft(node, port.name)) {
+                            return;
+                        }
                         state.selectedNodeId = node.id;
                         state.activeBindingTarget = port.name;
                         state.openListArg = `${node.id}.${port.name}`;
@@ -2159,11 +2356,14 @@
                     if (state.graph.nodes.some((targetNode) => (targetNode.bindings || []).some((binding) => binding.source === node.id && (binding.path || '') === port.path))) {
                         output.classList.add('bound');
                     }
+                    if (state.connectionDraft?.sourceId === node.id && state.connectionDraft.path === (port.path || '')) {
+                        output.classList.add('active');
+                    }
                     output.title = port.value ? `${port.label}: ${port.value}` : port.label;
                     output.textContent = port.label;
                     output.addEventListener('click', (event) => {
                         event.stopPropagation();
-                        bindPathToActiveInput(node.id, port.path);
+                        startConnectionDraft(node.id, port.path, event);
                     });
                     outputPorts.append(output);
                 }
@@ -2171,6 +2371,9 @@
                     if (element.dataset.dragged === 'true') {
                         event.preventDefault();
                         return;
+                    }
+                    if (state.connectionDraft) {
+                        cancelConnectionDraft();
                     }
                     state.visualInputPopover = null;
                     state.selectedNodeId = node.id;
@@ -2492,61 +2695,15 @@
             markDirty();
         };
 
-        const bridgeBindingCandidate = (removed, downstream, downstreamBinding) => {
-            const downstreamProp = inputPropForNode(downstream, downstreamBinding.target);
-            const candidates = (removed.bindings || []).filter((binding) => binding.source);
-            const ordered = [
-                ...candidates.filter((binding) => binding.target === downstreamBinding.path),
-                ...candidates.filter((binding) => binding.target === downstreamBinding.target),
-                ...candidates.filter((binding) => binding.target === 'items'),
-                ...candidates
-            ];
-            const seen = new Set();
-            for (const candidate of ordered) {
-                const key = `${candidate.source}.${candidate.path || ''}.${candidate.target}`;
-                if (seen.has(key)) {
-                    continue;
-                }
-                seen.add(key);
-                const source = nodeById(candidate.source);
-                if (!source) {
-                    continue;
-                }
-                const port = outputPortsForNode(source).find((item) => item.path === (candidate.path || ''));
-                if (downstreamProp && port && !typesCompatible(downstreamProp.type, port.type || 'any')) {
-                    continue;
-                }
-                return candidate;
-            }
-            return null;
-        };
-
-        const bridgeBindingsAroundRemovedNode = (removed) => {
-            for (const node of state.graph.nodes) {
-                if (node.id === removed.id) {
-                    continue;
-                }
-                for (const binding of node.bindings || []) {
-                    if (binding.source !== removed.id) {
-                        continue;
-                    }
-                    const candidate = bridgeBindingCandidate(removed, node, binding);
-                    if (!candidate) {
-                        continue;
-                    }
-                    binding.source = candidate.source;
-                    binding.path = candidate.path || '';
-                }
-            }
-        };
-
         const removeNode = (nodeId) => {
             const removed = nodeById(nodeId);
             if (!removed) {
                 return;
             }
             const removedIndex = state.graph.nodes.findIndex((candidate) => candidate.id === nodeId);
-            bridgeBindingsAroundRemovedNode(removed);
+            if (state.connectionDraft?.sourceId === nodeId) {
+                state.connectionDraft = null;
+            }
             state.graph.nodes = state.graph.nodes.filter((candidate) => candidate.id !== nodeId);
             state.graph.edges = state.graph.edges.filter((edge) => edge.from !== nodeId && edge.to !== nodeId);
             for (const node of state.graph.nodes) {
@@ -2573,12 +2730,28 @@
                 binding.index = index;
                 rendered += renderBindingEdge(svg, binding, index, bindings);
             });
-            if (rendered) {
+            if (state.connectionDraft) {
+                renderConnectionDraft(svg);
+            }
+        };
+
+        const renderConnectionDraft = (svg) => {
+            const draft = state.connectionDraft;
+            if (!draft?.pointer) {
                 return;
             }
-            for (const edge of state.graph.edges) {
-                rendered += renderNodeEdge(svg, edge.from, edge.to);
+            const sourcePort = findOutputPort(draft.sourceId, draft.path || '');
+            if (!sourcePort) {
+                return;
             }
+            drawEdge(
+                svg,
+                portPoint(sourcePort, 'output'),
+                draft.pointer,
+                false,
+                'var(--pipes-accent)',
+                0
+            );
         };
 
         const graphBindings = () => {
@@ -3185,11 +3358,6 @@
                     }
                 }
             }
-            if (!edges.length) {
-                for (let i = 1; i < state.graph.nodes.length; i++) {
-                    edges.push({ from: state.graph.nodes[i - 1].id, to: state.graph.nodes[i].id });
-                }
-            }
             state.graph.edges = edges;
         };
 
@@ -3226,14 +3394,25 @@
         });
         $('[data-graph]').addEventListener('click', (event) => {
             if (!event.target.closest('.node, .input-popover')) {
+                cancelConnectionDraft();
                 state.visualInputPopover = null;
                 renderGraph();
+            }
+        });
+        document.addEventListener('pointermove', updateConnectionDraft);
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                cancelConnectionDraft();
             }
         });
 
         Promise.all([loadPipes(), loadAbilities(), loadExamples()])
             .then(() => {
                 const pipeId = Number(new URLSearchParams(window.location.search).get('pipe') || 0);
+                const draft = readLocalDraft();
+                if (draft && (!pipeId || Number(draft.selectedPipeId || 0) === pipeId) && restoreLocalDraft(draft)) {
+                    return null;
+                }
                 if (pipeId > 0) {
                     return loadPipe(pipeId, false).then(() => setStatus(`Loaded build ${config.build}`));
                 }

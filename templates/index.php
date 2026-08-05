@@ -1357,6 +1357,7 @@
             return Object.entries(schema.properties).map(([name, details]) => ({
                 name,
                 type: Array.isArray(details?.type) ? details.type.join('|') : (details?.type || 'any'),
+                default: details?.default,
                 description: details?.description || '',
                 required: required.includes(name)
             }));
@@ -1485,7 +1486,9 @@
         const defaultArgsForAbility = (ability) => {
             const args = {};
             for (const prop of schemaProperties(ability.input_schema)) {
-                if (prop.required) {
+                if (prop.default !== undefined) {
+                    args[prop.name] = prop.default;
+                } else if (prop.required) {
                     args[prop.name] = '';
                 }
             }
@@ -1637,6 +1640,61 @@
                 }
             }
             return columns.slice(0, 80);
+        };
+
+        const dateFormatChoices = [
+            ['F j, Y', 'January 12, 2026'],
+            ['M j, Y', 'Jan 12, 2026'],
+            ['l, F j, Y', 'Monday, January 12, 2026'],
+            ['D, M j', 'Mon, Jan 12'],
+            ['n/j/Y', '1/12/2026'],
+            ['m/d/Y', '01/12/2026'],
+            ['d.m.Y', '12.01.2026'],
+            ['Y-m-d', '2026-01-12']
+        ];
+
+        const dateFormatterSampleValue = (node) => {
+            const items = valueForBinding(node, 'items');
+            const path = String(ensureNodeArgs(node).path || '');
+            if (!Array.isArray(items) || !path) {
+                return '2026-01-12';
+            }
+            for (const item of items.slice(0, 10)) {
+                const value = pathValue(item, path);
+                if (value !== null && value !== undefined && typeof value !== 'object') {
+                    return String(value);
+                }
+            }
+            return '2026-01-12';
+        };
+
+        const phpDatePreview = (format, sourceValue) => {
+            const source = String(sourceValue || '2026-01-12');
+            const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(source) ? `${source}T00:00:00` : source);
+            if (Number.isNaN(date.getTime())) {
+                return '';
+            }
+            const months = [
+                'January', 'February', 'March', 'April', 'May', 'June',
+                'July', 'August', 'September', 'October', 'November', 'December'
+            ];
+            const shortMonths = months.map((month) => month.slice(0, 3));
+            const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            const shortDays = days.map((day) => day.slice(0, 3));
+            const pad = (value) => String(value).padStart(2, '0');
+            const replacements = {
+                Y: String(date.getFullYear()),
+                y: String(date.getFullYear()).slice(-2),
+                F: months[date.getMonth()],
+                M: shortMonths[date.getMonth()],
+                m: pad(date.getMonth() + 1),
+                n: String(date.getMonth() + 1),
+                d: pad(date.getDate()),
+                j: String(date.getDate()),
+                l: days[date.getDay()],
+                D: shortDays[date.getDay()]
+            };
+            return String(format || 'F j, Y').replace(/[YyFMmndjlD]/g, (token) => replacements[token] ?? token);
         };
 
         const formatPathValue = (value) => {
@@ -2637,7 +2695,8 @@
             renderListArgs(node, props, $('[data-visual-input-args]', popover), {
                 propName: prop.name,
                 forceOpen: true,
-                hideTitle: true
+                hideTitle: true,
+                scope: 'visual'
             });
 
             const graphRect = graph.getBoundingClientRect();
@@ -2706,7 +2765,7 @@
                 if (state.lastRunResults[node.id]) {
                     badges.append(badge('has output'));
                 }
-                renderListArgs(node, props, $('[data-list-args]', step));
+                renderListArgs(node, props, $('[data-list-args]', step), { scope: 'list' });
                 renderOutputPreview(node, $('[data-output-preview]', step));
                 $('[data-step-label]', step).addEventListener('input', (event) => {
                     state.selectedNodeId = node.id;
@@ -3137,7 +3196,7 @@
             });
             $('[data-node-label]', inspector).value = node.label || ability?.label || node.ability_id;
             $('[data-node-args]', inspector).value = JSON.stringify(ensureNodeArgs(node), null, 2);
-            renderListArgs(node, props, $('[data-inspector-inputs]', inspector));
+            renderListArgs(node, props, $('[data-inspector-inputs]', inspector), { scope: 'inspector' });
 
             $('[data-node-label]', inspector).addEventListener('input', (event) => {
                 node.label = event.target.value;
@@ -3192,6 +3251,9 @@
                 row.className = 'list-arg';
                 row.dataset.listArgDetails = `${node.id}.${prop.name}`;
                 row.open = !!options.forceOpen || state.openListArg === row.dataset.listArgDetails;
+                if (node.ability_id === 'pipes/format-date-field' && ['value', 'path', 'date_format'].includes(prop.name)) {
+                    row.open = true;
+                }
                 const summary = document.createElement('summary');
                 summary.textContent = `${prop.name}${prop.required ? ' *' : ''}`;
                 summary.addEventListener('click', () => {
@@ -3257,7 +3319,7 @@
                 const mode = binding ? 'binding' : (isUserQueryArg(argValue) ? 'ask' : 'manual');
                 const modeGroup = document.createElement('div');
                 modeGroup.className = 'input-mode';
-                const modeName = `input-mode-${node.id}-${prop.name}`;
+                const modeName = `input-mode-${options.scope || 'args'}-${node.id}-${prop.name}`;
                 const setBindingMode = () => {
                     if (!sourceNodes.length) {
                         return;
@@ -3312,7 +3374,14 @@
                     radio.name = modeName;
                     radio.value = value;
                     radio.checked = mode === value;
-                    radio.addEventListener('change', () => {
+                    optionLabel.addEventListener('click', (event) => {
+                        event.stopPropagation();
+                    });
+                    radio.addEventListener('click', (event) => {
+                        event.stopPropagation();
+                    });
+                    radio.addEventListener('change', (event) => {
+                        event.stopPropagation();
                         if (radio.checked) {
                             handler();
                         }
@@ -3442,6 +3511,66 @@
                         notice.textContent = 'Run the pipe to inspect item fields.';
                         row.append(notice);
                     }
+                }
+
+                if (node.ability_id === 'pipes/format-date-field' && prop.name === 'date_format') {
+                    const currentFormat = formatArgValue(ensureNodeArgs(node).date_format) || 'F j, Y';
+                    const sourceValue = dateFormatterSampleValue(node);
+                    const formatSelect = document.createElement('select');
+                    for (const [format, label] of dateFormatChoices) {
+                        const option = document.createElement('option');
+                        option.value = format;
+                        option.textContent = `${label} (${format})`;
+                        formatSelect.append(option);
+                    }
+                    const customOption = document.createElement('option');
+                    customOption.value = '__custom';
+                    customOption.textContent = 'Custom format';
+                    formatSelect.append(customOption);
+
+                    const formatInput = document.createElement('input');
+                    formatInput.type = 'text';
+                    formatInput.dataset.nodeArgNode = node.id;
+                    formatInput.dataset.nodeArg = prop.name;
+                    formatInput.dataset.nodeArgType = prop.type;
+                    formatInput.value = currentFormat;
+                    formatInput.placeholder = 'F j, Y';
+
+                    const preview = document.createElement('div');
+                    preview.className = 'output-preview-empty';
+                    const syncDateFormatPreview = () => {
+                        const selected = dateFormatChoices.find(([format]) => format === formatInput.value);
+                        formatSelect.value = selected ? selected[0] : '__custom';
+                        const rendered = phpDatePreview(formatInput.value || 'F j, Y', sourceValue);
+                        preview.textContent = rendered ?
+                            `Preview: ${sourceValue} -> ${rendered}` :
+                            `Preview unavailable for ${sourceValue}`;
+                    };
+
+                    formatSelect.value = dateFormatChoices.some(([format]) => format === currentFormat) ? currentFormat : '__custom';
+                    formatSelect.addEventListener('change', (event) => {
+                        if (event.target.value !== '__custom') {
+                            formatInput.value = event.target.value;
+                            ensureNodeArgs(node)[prop.name] = event.target.value;
+                            syncDateFormatPreview();
+                            markDirty();
+                        }
+                    });
+                    formatInput.addEventListener('input', (event) => {
+                        ensureNodeArgs(node)[prop.name] = event.target.value || 'F j, Y';
+                        syncDateFormatPreview();
+                        markDirty();
+                    });
+                    syncDateFormatPreview();
+                    row.append(formatSelect, formatInput, preview);
+                    if (prop.description) {
+                        const description = document.createElement('div');
+                        description.className = 'meta';
+                        description.textContent = prop.description;
+                        row.append(description);
+                    }
+                    container.append(row);
+                    continue;
                 }
 
                 const value = ensureNodeArgs(node)[prop.name];

@@ -79,6 +79,9 @@
             grid-template-columns: 18rem minmax(24rem, 1fr) 24rem;
             min-height: 100vh;
         }
+        .app.inspector-collapsed {
+            grid-template-columns: 18rem minmax(24rem, 1fr);
+        }
         .sidebar, .inspector {
             border-color: var(--pipes-border);
             background: var(--pipes-surface);
@@ -94,10 +97,33 @@
             padding: 1rem;
             overflow: auto;
         }
+        .app.inspector-collapsed .inspector {
+            display: none;
+        }
+        .inspector-header {
+            align-items: center;
+            display: flex;
+            gap: 0.5rem;
+            justify-content: space-between;
+            margin-bottom: 0.85rem;
+        }
+        .inspector-header strong {
+            font-size: 0.86rem;
+        }
+        .inspector-close {
+            align-items: center;
+            display: inline-flex;
+            flex: 0 0 auto;
+            height: 1.8rem;
+            justify-content: center;
+            line-height: 1;
+            padding: 0;
+            width: 1.8rem;
+        }
         .workspace {
             min-width: 0;
             display: grid;
-            grid-template-rows: auto 1fr auto;
+            grid-template-rows: auto auto 1fr auto;
         }
         .topbar {
             display: grid;
@@ -107,6 +133,20 @@
             border-bottom: 1px solid var(--pipes-border);
             background: var(--pipes-surface);
             padding: 0.9rem 1rem;
+        }
+        .workspace-message {
+            border-bottom: 1px solid var(--pipes-border);
+            background: color-mix(in srgb, var(--pipes-link) 8%, var(--pipes-surface));
+            color: var(--pipes-text);
+            padding: 0.75rem 1rem;
+            overflow-wrap: anywhere;
+        }
+        .workspace-message.error {
+            background: color-mix(in srgb, var(--pipes-danger) 8%, var(--pipes-surface));
+            color: var(--pipes-danger);
+        }
+        .workspace-message[hidden] {
+            display: none;
         }
         .title-row {
             display: grid;
@@ -516,11 +556,24 @@
         .node h2 {
             font-size: 0.95rem;
             margin: 0 0 0.35rem;
+            padding-right: 2rem;
         }
         .node .node-id {
             font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
             color: var(--pipes-muted);
             font-size: 0.76rem;
+        }
+        .node-delete {
+            align-items: center;
+            display: inline-flex;
+            height: 1.75rem;
+            justify-content: center;
+            line-height: 1;
+            padding: 0;
+            position: absolute;
+            right: 0.55rem;
+            top: 0.55rem;
+            width: 1.75rem;
         }
         .port-groups {
             display: grid;
@@ -549,6 +602,26 @@
             overflow-wrap: anywhere;
             padding: 0.32rem 0.42rem;
             text-align: left;
+        }
+        .port-row {
+            position: relative;
+        }
+        .port-row .input-port.bound {
+            padding-right: 2rem;
+        }
+        .port-clear {
+            align-items: center;
+            display: inline-flex;
+            height: 1.35rem;
+            justify-content: center;
+            line-height: 1;
+            padding: 0;
+            position: absolute;
+            right: 0.18rem;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 1.35rem;
+            z-index: 6;
         }
         .port::before,
         .port::after {
@@ -591,6 +664,38 @@
         }
         .port.active {
             box-shadow: 0 0 0 2px color-mix(in srgb, var(--pipes-accent) 20%, transparent);
+        }
+        .input-popover {
+            position: absolute;
+            z-index: 8;
+            width: min(22rem, calc(100vw - 2rem));
+            border: 1px solid var(--pipes-border);
+            border-radius: var(--pipes-radius);
+            background: var(--pipes-surface);
+            box-shadow: 0 16px 38px color-mix(in srgb, #000 16%, transparent);
+            padding: 0.75rem;
+        }
+        .input-popover .list-args {
+            border-top: 0;
+            margin-top: 0;
+            padding-top: 0;
+        }
+        .input-popover-header {
+            align-items: center;
+            display: flex;
+            gap: 0.5rem;
+            justify-content: space-between;
+            margin-bottom: 0.6rem;
+        }
+        .input-popover-title {
+            font-size: 0.84rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .input-popover-close {
+            flex: 0 0 auto;
+            padding: 0.25rem 0.45rem;
         }
         .node-footer {
             display: flex;
@@ -665,46 +770,6 @@
             border-top: 1px solid var(--pipes-border);
         }
         .schema-row:first-of-type { border-top: 0; }
-        .input-target {
-            width: 100%;
-            text-align: left;
-            border: 1px solid transparent;
-            background: transparent;
-            padding: 0.45rem;
-        }
-        .input-target.active {
-            border-color: var(--pipes-accent);
-            background: color-mix(in srgb, var(--pipes-accent) 10%, transparent);
-        }
-        .chip-row {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.35rem;
-            margin-top: 0.45rem;
-        }
-        .path-chip {
-            max-width: 100%;
-            border-radius: 999px;
-            padding: 0.35rem 0.55rem;
-            color: var(--pipes-link);
-            overflow-wrap: anywhere;
-            text-align: left;
-        }
-        .path-chip.bound {
-            border-color: var(--pipes-accent);
-            color: var(--pipes-accent);
-            background: color-mix(in srgb, var(--pipes-accent) 8%, transparent);
-        }
-        .source-panel {
-            border: 1px solid var(--pipes-border);
-            border-radius: var(--pipes-radius);
-            padding: 0.65rem;
-            margin-bottom: 0.65rem;
-        }
-        .source-panel h4 {
-            margin: 0 0 0.2rem;
-            font-size: 0.84rem;
-        }
         .binding {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -837,7 +902,7 @@
 <body>
     <?php wp_app_body_open(); ?>
 
-    <div id="pipes-app" class="app">
+    <div id="pipes-app" class="app inspector-collapsed">
         <aside class="sidebar">
             <h1 class="brand">Pipes</h1>
             <button class="primary" data-action="new-pipe">New Pipe</button>
@@ -876,9 +941,12 @@
                     </div>
                     <button data-action="save">Save</button>
                     <button data-action="run">Run</button>
+                    <button data-action="toggle-inspector" aria-pressed="false">Show Inspector</button>
                     <button class="danger" data-action="delete">Delete</button>
                 </div>
             </div>
+
+            <div class="workspace-message" data-workspace-message hidden></div>
 
             <section class="list-builder" data-list-builder></section>
 
@@ -927,6 +995,8 @@
             listAddIndex: null,
             listAddSearch: '',
             openListArg: '',
+            visualInputPopover: null,
+            inspectorOpen: false,
             dirty: false
         };
 
@@ -962,6 +1032,21 @@
             const status = $('[data-status]');
             status.textContent = message;
             status.classList.toggle('error', isError);
+        };
+
+        const setWorkspaceMessage = (message = '', isError = false) => {
+            const element = $('[data-workspace-message]');
+            if (!element) {
+                return;
+            }
+            element.textContent = message;
+            element.classList.toggle('error', isError);
+            element.hidden = !message;
+        };
+
+        const reportError = (message) => {
+            setWorkspaceMessage(message, true);
+            setStatus('Needs attention', true);
         };
 
         const setRunError = (message = '') => {
@@ -1014,8 +1099,14 @@
         };
 
         const normalizeGraphArgs = () => {
+            const nodeIds = new Set((state.graph.nodes || []).map((node) => node.id));
             for (const node of state.graph.nodes || []) {
                 ensureNodeArgs(node);
+                node.bindings = (node.bindings || []).filter((binding) => (
+                    binding.source &&
+                    binding.source !== node.id &&
+                    nodeIds.has(binding.source)
+                ));
             }
         };
 
@@ -1048,6 +1139,13 @@
             $$('[data-builder-mode]').forEach((button) => {
                 button.classList.toggle('active', button.dataset.builderMode === state.builderMode);
             });
+            $('.app').classList.toggle('inspector-collapsed', !state.inspectorOpen);
+            const inspectorToggle = $('[data-action="toggle-inspector"]');
+            if (inspectorToggle) {
+                inspectorToggle.textContent = 'Show Inspector';
+                inspectorToggle.setAttribute('aria-pressed', state.inspectorOpen ? 'true' : 'false');
+                inspectorToggle.hidden = state.inspectorOpen;
+            }
         };
 
         const abilityById = (id) => state.abilities.find((ability) => ability.id === id);
@@ -1444,7 +1542,10 @@
         const bindPathToActiveInput = (sourceId, path) => {
             const node = selectedNode();
             if (!node || !state.activeBindingTarget) {
-                setStatus('Select an input before choosing an output path.', true);
+                setWorkspaceMessage('Select an input before choosing an output path.', true);
+                return;
+            }
+            if (node.id === sourceId) {
                 return;
             }
             node.bindings = node.bindings || [];
@@ -1458,7 +1559,17 @@
             delete ensureNodeArgs(node)[state.activeBindingTarget];
             syncEdgesFromBindings();
             markDirty();
+            setWorkspaceMessage();
             render();
+        };
+
+        const removeBindingTarget = (node, target) => {
+            node.bindings = (node.bindings || []).filter((candidate) => candidate.target !== target);
+            if (state.activeBindingTarget === target) {
+                state.visualInputPopover = null;
+            }
+            syncEdgesFromBindings();
+            markDirty();
         };
 
         const defaultBindingForNode = (node, props) => {
@@ -1581,12 +1692,12 @@
             return answers;
         };
 
-        const flushListArgs = () => {
-            $$('[data-list-arg-node][data-list-arg]').forEach((control) => {
-                const node = nodeById(control.dataset.listArgNode);
+        const flushNodeArgs = () => {
+            $$('[data-node-arg-node][data-node-arg]').forEach((control) => {
+                const node = nodeById(control.dataset.nodeArgNode);
                 const prop = {
-                    name: control.dataset.listArg,
-                    type: control.dataset.listArgType || 'string'
+                    name: control.dataset.nodeArg,
+                    type: control.dataset.nodeArgType || 'string'
                 };
                 if (!node) {
                     return;
@@ -1700,9 +1811,11 @@
             state.listAddOpen = false;
             state.listAddIndex = null;
             state.listAddSearch = '';
+            state.visualInputPopover = null;
             state.dirty = false;
             $('[data-title]').value = state.title;
             clearRunResults();
+            setWorkspaceMessage();
             setPipeUrl();
             setStatus('Not saved');
             render();
@@ -1711,6 +1824,7 @@
 
         const loadExample = async (example) => {
             setStatus('Loading starter...');
+            setWorkspaceMessage();
             const data = await request(`examples/${example.id}`, { method: 'POST' });
             state.selectedPipeId = data.pipe.id;
             state.selectedNodeId = data.pipe.graph?.nodes?.[0]?.id || null;
@@ -1722,9 +1836,11 @@
             state.listAddOpen = false;
             state.listAddIndex = null;
             state.listAddSearch = '';
+            state.visualInputPopover = null;
             state.dirty = false;
             $('[data-title]').value = state.title;
             clearRunResults();
+            setWorkspaceMessage();
             setPipeUrl(state.selectedPipeId);
             setStatus('Starter pipe loaded');
             await loadPipes();
@@ -1744,9 +1860,11 @@
             state.listAddOpen = false;
             state.listAddIndex = null;
             state.listAddSearch = '';
+            state.visualInputPopover = null;
             state.dirty = false;
             $('[data-title]').value = state.title;
             clearRunResults();
+            setWorkspaceMessage();
             if (updateUrl) {
                 setPipeUrl(state.selectedPipeId);
             }
@@ -1755,7 +1873,7 @@
         };
 
         const savePipe = async () => {
-            flushListArgs();
+            flushNodeArgs();
             normalizeGraphArgs();
             state.title = $('[data-title]').value.trim() || 'Untitled Pipe';
             const path = state.selectedPipeId ? `pipes/${state.selectedPipeId}` : 'pipes';
@@ -1772,6 +1890,7 @@
             setPipeUrl(state.selectedPipeId);
             await loadPipes();
             render();
+            setWorkspaceMessage();
             setStatus(savedArgsStatus());
         };
 
@@ -1792,7 +1911,8 @@
         const runPipe = async () => {
             setStatus('Running...');
             setRunError();
-            flushListArgs();
+            setWorkspaceMessage();
+            flushNodeArgs();
             normalizeGraphArgs();
             const userAnswers = collectUserAnswers();
             try {
@@ -1808,6 +1928,7 @@
                 state.lastRunResults = data.results || {};
                 setRunOutput(JSON.stringify(data, null, 2));
                 setRunError();
+                setWorkspaceMessage();
                 setStatus(state.dirty ? 'Unsaved changes' : 'Run complete');
                 render();
             } catch (error) {
@@ -1823,6 +1944,7 @@
                     state.lastRunResults = error.data.results;
                     render();
                 }
+                setWorkspaceMessage(error.message, true);
                 setStatus('Run failed', true);
             }
         };
@@ -1858,7 +1980,7 @@
                 button.innerHTML = `<strong></strong><span class="meta"></span>`;
                 $('strong', button).textContent = pipe.title;
                 $('.meta', button).textContent = new Date(pipe.modified).toLocaleString();
-                button.addEventListener('click', () => loadPipe(pipe.id).catch((error) => setStatus(error.message, true)));
+                button.addEventListener('click', () => loadPipe(pipe.id).catch((error) => reportError(error.message)));
                 list.append(button);
             }
         };
@@ -1921,7 +2043,7 @@
                 if (example.pipe_id) {
                     $('.badge-row', button).append(badge('saved'));
                 }
-                button.addEventListener('click', () => loadExample(example).catch((error) => setStatus(error.message, true)));
+                button.addEventListener('click', () => loadExample(example).catch((error) => reportError(error.message)));
                 list.append(button);
             }
         };
@@ -1936,6 +2058,7 @@
         const renderGraph = () => {
             const graph = $('[data-graph]');
             $$('.node', graph).forEach((node) => node.remove());
+            $$('.input-popover', graph).forEach((popover) => popover.remove());
             $('[data-empty]').style.display = state.graph.nodes.length ? 'none' : 'block';
 
             for (const node of state.graph.nodes) {
@@ -1945,6 +2068,7 @@
                 element.style.left = `${node.position.x}px`;
                 element.style.top = `${node.position.y}px`;
                 element.innerHTML = `
+                    <button type="button" class="node-delete danger" data-node-delete aria-label="Remove node" title="Remove node">×</button>
                     <h2></h2>
                     <div class="node-id"></div>
                     <p class="meta"></p>
@@ -1976,15 +2100,23 @@
                 if (state.lastRunResults[node.id]) {
                     badges.append(badge('has output'));
                 }
+                $('[data-node-delete]', element).addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    removeNode(node.id);
+                    render();
+                });
                 const inputPorts = $('[data-input-ports]', element);
                 for (const port of inputPortsForNode(node)) {
+                    const portRow = document.createElement('div');
+                    portRow.className = 'port-row';
                     const input = document.createElement('button');
                     input.type = 'button';
                     input.className = 'port input-port';
                     input.dataset.portKind = 'input';
                     input.dataset.nodeId = node.id;
                     input.dataset.portName = port.name;
-                    if ((node.bindings || []).some((binding) => binding.target === port.name)) {
+                    const inputBinding = (node.bindings || []).find((binding) => binding.target === port.name);
+                    if (inputBinding) {
                         input.classList.add('bound');
                     }
                     if (node.id === state.selectedNodeId && state.activeBindingTarget === port.name) {
@@ -1995,9 +2127,26 @@
                         event.stopPropagation();
                         state.selectedNodeId = node.id;
                         state.activeBindingTarget = port.name;
+                        state.openListArg = `${node.id}.${port.name}`;
+                        state.visualInputPopover = { nodeId: node.id, propName: port.name };
                         render();
                     });
-                    inputPorts.append(input);
+                    portRow.append(input);
+                    if (inputBinding) {
+                        const clear = document.createElement('button');
+                        clear.type = 'button';
+                        clear.className = 'port-clear danger';
+                        clear.setAttribute('aria-label', `Remove binding for ${port.name}`);
+                        clear.title = `Remove binding for ${port.name}`;
+                        clear.textContent = '×';
+                        clear.addEventListener('click', (event) => {
+                            event.stopPropagation();
+                            removeBindingTarget(node, port.name);
+                            render();
+                        });
+                        portRow.append(clear);
+                    }
+                    inputPorts.append(portRow);
                 }
                 const outputPorts = $('[data-output-ports]', element);
                 for (const port of outputPortsForNode(node)) {
@@ -2023,6 +2172,7 @@
                         event.preventDefault();
                         return;
                     }
+                    state.visualInputPopover = null;
                     state.selectedNodeId = node.id;
                     render();
                 });
@@ -2030,7 +2180,61 @@
                 graph.append(element);
             }
 
+            renderVisualInputPopover(graph);
             renderEdges();
+        };
+
+        const renderVisualInputPopover = (graph) => {
+            const popoverState = state.visualInputPopover;
+            if (!popoverState) {
+                return;
+            }
+            const node = nodeById(popoverState.nodeId);
+            if (!node) {
+                state.visualInputPopover = null;
+                return;
+            }
+            const ability = abilityById(node.ability_id);
+            const props = schemaProperties(ability?.input_schema);
+            const prop = props.find((candidate) => candidate.name === popoverState.propName);
+            if (!prop) {
+                state.visualInputPopover = null;
+                return;
+            }
+
+            const popover = document.createElement('div');
+            popover.className = 'input-popover';
+            popover.innerHTML = `
+                <div class="input-popover-header">
+                    <strong class="input-popover-title"></strong>
+                    <button type="button" class="input-popover-close" data-close-input-popover aria-label="Close input editor" title="Close">×</button>
+                </div>
+                <div class="list-args" data-visual-input-args></div>
+            `;
+            $('.input-popover-title', popover).textContent = `${node.label || ability?.label || node.ability_id}: ${prop.name}`;
+            popover.addEventListener('click', (event) => {
+                event.stopPropagation();
+            });
+            $('[data-close-input-popover]', popover).addEventListener('click', (event) => {
+                event.stopPropagation();
+                state.visualInputPopover = null;
+                renderGraph();
+            });
+
+            graph.append(popover);
+            renderListArgs(node, props, $('[data-visual-input-args]', popover), {
+                propName: prop.name,
+                forceOpen: true,
+                hideTitle: true
+            });
+
+            const graphRect = graph.getBoundingClientRect();
+            const port = findInputPort(node.id, prop.name);
+            const portRect = port?.getBoundingClientRect();
+            const x = portRect ? portRect.right - graphRect.left + 18 : (node.position.x + 300);
+            const y = portRect ? portRect.top - graphRect.top - 12 : node.position.y;
+            popover.style.left = `${Math.max(16, Math.round(x))}px`;
+            popover.style.top = `${Math.max(16, Math.round(y))}px`;
         };
 
         const renderListBuilder = () => {
@@ -2219,7 +2423,7 @@
                     runButton.onclick = (event) => {
                         event.preventDefault();
                         event.stopPropagation();
-                        runPipe().catch((error) => setStatus(error.message, true));
+                        runPipe().catch((error) => reportError(error.message));
                     };
                 }
             }
@@ -2493,27 +2697,32 @@
             const node = nodeById(state.selectedNodeId);
             if (!node) {
                 inspector.innerHTML = `
+                    <div class="inspector-header">
+                        <strong>Inspector</strong>
+                        <button type="button" class="inspector-close" data-action="close-inspector" aria-label="Hide inspector" title="Hide inspector">×</button>
+                    </div>
                     <div class="empty">Select a node to configure inputs and bindings.</div>
                 `;
+                $('[data-action="close-inspector"]', inspector).addEventListener('click', () => {
+                    state.inspectorOpen = false;
+                    renderBuilderMode();
+                    renderEdges();
+                });
                 return;
             }
             const ability = abilityById(node.ability_id);
             const props = schemaProperties(ability?.input_schema);
-            const activeTarget = ensureActiveBindingTarget(node, props);
+            ensureActiveBindingTarget(node, props);
             inspector.innerHTML = `
+                <div class="inspector-header">
+                    <strong>Inspector</strong>
+                    <button type="button" class="inspector-close" data-action="close-inspector" aria-label="Hide inspector" title="Hide inspector">×</button>
+                </div>
                 <div class="field">
                     <label>Node label</label>
                     <input type="text" data-node-label>
                 </div>
-                <div class="schema">
-                    <h3>Inputs</h3>
-                    <div class="notice">Choose the input you want to fill, then choose an output path below.</div>
-                    <div data-schema></div>
-                </div>
-                <div class="schema">
-                    <h3>Available Outputs</h3>
-                    <div data-output-paths></div>
-                </div>
+                <div class="list-args" data-inspector-inputs></div>
                 <div class="field">
                     <label>Base args JSON</label>
                     <textarea data-node-args spellcheck="false"></textarea>
@@ -2539,31 +2748,14 @@
                 </div>
                 <button class="danger" data-action="remove-node">Remove Node</button>
             `;
+            $('[data-action="close-inspector"]', inspector).addEventListener('click', () => {
+                state.inspectorOpen = false;
+                renderBuilderMode();
+                renderEdges();
+            });
             $('[data-node-label]', inspector).value = node.label || ability?.label || node.ability_id;
             $('[data-node-args]', inspector).value = JSON.stringify(ensureNodeArgs(node), null, 2);
-
-            const schema = $('[data-schema]', inspector);
-            schema.innerHTML = props.length ? '' : '<div class="notice">This ability has no declared input schema.</div>';
-            for (const prop of props) {
-                const row = document.createElement('button');
-                row.type = 'button';
-                row.className = `input-target ${prop.name === activeTarget ? 'active' : ''}`;
-                row.innerHTML = `<strong></strong><span class="meta"></span><span class="notice"></span><div class="badge-row"></div>`;
-                $('strong', row).textContent = `${prop.name}${prop.required ? ' *' : ''}`;
-                $('.meta', row).textContent = prop.type;
-                $('.notice', row).textContent = prop.description;
-                const binding = (node.bindings || []).find((candidate) => candidate.target === prop.name);
-                if (binding) {
-                    $('.badge-row', row).append(badge(`${binding.source}.${binding.path || '(whole output)'}`));
-                } else if (Object.prototype.hasOwnProperty.call(ensureNodeArgs(node), prop.name)) {
-                    $('.badge-row', row).append(badge('base arg'));
-                }
-                row.addEventListener('click', () => {
-                    state.activeBindingTarget = prop.name;
-                    renderInspector();
-                });
-                schema.append(row);
-            }
+            renderListArgs(node, props, $('[data-inspector-inputs]', inspector));
 
             $('[data-node-label]', inspector).addEventListener('input', (event) => {
                 node.label = event.target.value;
@@ -2576,7 +2768,7 @@
                     markDirty();
                     setStatus('Unsaved changes');
                 } catch (error) {
-                    setStatus('Invalid JSON in node args', true);
+                    reportError('Invalid JSON in node args');
                 }
             });
             $('[data-action="add-binding"]', inspector).addEventListener('click', () => {
@@ -2590,81 +2782,48 @@
                 render();
             });
 
-            renderOutputPaths(node);
             renderBindings(node, props);
             renderOutputPreview(node, $('[data-inspector-output-preview]', inspector));
         };
 
-        const renderOutputPaths = (node) => {
-            const container = $('[data-output-paths]');
-            const inputProp = schemaProperties(abilityById(node.ability_id)?.input_schema)
-                .find((prop) => prop.name === state.activeBindingTarget);
-            const sourceNodes = compatibleBindingSourceNodesFor(node, inputProp);
-            const panels = [];
-            for (const source of sourceNodes) {
-                const runResult = state.lastRunResults[source.id]?.result;
-                const paths = runResult === undefined ? [] : flattenPaths(runResult)
-                    .filter((item) => typesCompatible(inputProp?.type || 'any', valueType(item.value)));
-                panels.push({ source, paths });
-            }
-
-            if (!panels.length) {
-                container.innerHTML = '<div class="notice">Add an upstream node to create a binding source.</div>';
-                return;
-            }
-
-            container.innerHTML = '';
-            for (const panel of panels) {
-                const section = document.createElement('div');
-                section.className = 'source-panel';
-                section.innerHTML = `<h4></h4><div class="meta"></div><div class="chip-row"></div>`;
-                $('h4', section).textContent = panel.source.label || panel.source.ability_id;
-                $('.meta', section).textContent = panel.paths.length ? 'Click a path to bind it to the selected input.' : 'Run the pipe to inspect real output paths, or use the manual bindings below.';
-                const chips = $('.chip-row', section);
-                for (const item of panel.paths.slice(0, 24)) {
-                    const chip = document.createElement('button');
-                    chip.type = 'button';
-                    chip.className = 'path-chip';
-                    const binding = (node.bindings || []).find((candidate) => (
-                        candidate.target === state.activeBindingTarget &&
-                        candidate.source === panel.source.id &&
-                        candidate.path === item.path
-                    ));
-                    if (binding) {
-                        chip.classList.add('bound');
-                    }
-                    chip.textContent = `${item.path} = ${formatPathValue(item.value)}`;
-                    chip.addEventListener('click', () => bindPathToActiveInput(panel.source.id, item.path));
-                    chips.append(chip);
-                }
-                container.append(section);
-            }
-        };
-
-        const renderListArgs = (node, props, container) => {
+        const renderListArgs = (node, props, container, options = {}) => {
             if (!container) {
                 return;
             }
+            const visibleProps = options.propName ? props.filter((prop) => prop.name === options.propName) : props;
             if (!props.length) {
                 container.innerHTML = '<div class="notice">No declared inputs.</div>';
                 return;
             }
+            if (!visibleProps.length) {
+                container.innerHTML = '<div class="notice">Input is not declared by this ability.</div>';
+                return;
+            }
 
-            container.innerHTML = '<strong>Inputs</strong>';
+            container.innerHTML = options.hideTitle ? '' : '<strong>Inputs</strong>';
             ensureNodeArgs(node);
-            for (const prop of props) {
+            for (const prop of visibleProps) {
                 const binding = (node.bindings || []).find((candidate) => candidate.target === prop.name);
                 const sourceNodes = compatibleBindingSourceNodesFor(node, prop);
                 const argValue = ensureNodeArgs(node)[prop.name];
                 const row = document.createElement('details');
                 row.className = 'list-arg';
                 row.dataset.listArgDetails = `${node.id}.${prop.name}`;
-                row.open = state.openListArg === row.dataset.listArgDetails;
+                row.open = !!options.forceOpen || state.openListArg === row.dataset.listArgDetails;
                 const summary = document.createElement('summary');
                 summary.textContent = `${prop.name}${prop.required ? ' *' : ''}`;
+                summary.addEventListener('click', () => {
+                    state.selectedNodeId = node.id;
+                    state.activeBindingTarget = prop.name;
+                    state.openListArg = `${node.id}.${prop.name}`;
+                    renderGraph();
+                });
                 row.append(summary);
                 row.addEventListener('toggle', () => {
                     state.openListArg = row.open ? row.dataset.listArgDetails : '';
+                    if (row.open) {
+                        state.activeBindingTarget = prop.name;
+                    }
                 });
 
                 if (node.ability_id === 'pipes/output-dashboard-list' && prop.name === 'columns') {
@@ -2717,6 +2876,25 @@
                 const modeGroup = document.createElement('div');
                 modeGroup.className = 'input-mode';
                 const modeName = `input-mode-${node.id}-${prop.name}`;
+                const setBindingMode = () => {
+                    if (!sourceNodes.length) {
+                        return;
+                    }
+                    const source = sourceNodes[0];
+                    const sourcePorts = compatibleOutputPortsFor(source, prop);
+                    node.bindings = node.bindings || [];
+                    const existing = node.bindings.find((candidate) => candidate.target === prop.name);
+                    const nextBinding = existing || { target: prop.name, source: source.id, path: sourcePorts[0]?.path || '' };
+                    nextBinding.source = existing?.source || source.id;
+                    nextBinding.path = sourcePorts.some((port) => port.path === nextBinding.path) ? nextBinding.path : (sourcePorts[0]?.path || '');
+                    if (!existing) {
+                        node.bindings.push(nextBinding);
+                    }
+                    delete ensureNodeArgs(node)[prop.name];
+                    syncEdgesFromBindings();
+                    markDirty();
+                    render();
+                };
                 const setManualMode = () => {
                     node.bindings = node.bindings || [];
                     node.bindings = node.bindings.filter((candidate) => candidate.target !== prop.name);
@@ -2738,10 +2916,14 @@
                     markDirty();
                     render();
                 };
-                for (const [value, label, handler] of [
+                const modeOptions = [
                     ['manual', 'Predefined', setManualMode],
                     ['ask', 'Ask user', setAskMode]
-                ]) {
+                ];
+                if (sourceNodes.length || binding) {
+                    modeOptions.push(['binding', 'Previous output', setBindingMode]);
+                }
+                for (const [value, label, handler] of modeOptions) {
                     const optionLabel = document.createElement('label');
                     const radio = document.createElement('input');
                     radio.type = 'radio';
@@ -2758,13 +2940,18 @@
                 }
                 row.append(modeGroup);
 
-                if (sourceNodes.length) {
+                if (sourceNodes.length || binding) {
                     const bindSelect = document.createElement('select');
                     const chooseSource = document.createElement('option');
                     chooseSource.value = '';
                     chooseSource.textContent = 'Bind from previous output';
                     bindSelect.append(chooseSource);
-                    for (const source of sourceNodes) {
+                    const selectSources = [...sourceNodes];
+                    const boundSource = binding ? nodeById(binding.source) : null;
+                    if (boundSource && !selectSources.some((source) => source.id === boundSource.id)) {
+                        selectSources.unshift(boundSource);
+                    }
+                    for (const source of selectSources) {
                         const option = document.createElement('option');
                         option.value = source.id;
                         option.textContent = source.label || source.ability_id;
@@ -2848,9 +3035,9 @@
                         }
                         const pathInput = document.createElement('input');
                         pathInput.type = 'text';
-                        pathInput.dataset.listArgNode = node.id;
-                        pathInput.dataset.listArg = prop.name;
-                        pathInput.dataset.listArgType = prop.type;
+                        pathInput.dataset.nodeArgNode = node.id;
+                        pathInput.dataset.nodeArg = prop.name;
+                        pathInput.dataset.nodeArgType = prop.type;
                         pathInput.value = formatArgValue(ensureNodeArgs(node)[prop.name]);
                         pathSelect.value = suggestions.includes(pathInput.value) ? pathInput.value : '';
                         pathSelect.addEventListener('change', (event) => {
@@ -2877,9 +3064,9 @@
 
                 const value = ensureNodeArgs(node)[prop.name];
                 const control = document.createElement(prop.type.includes('array') || prop.type.includes('object') ? 'textarea' : 'input');
-                control.dataset.listArgNode = node.id;
-                control.dataset.listArg = prop.name;
-                control.dataset.listArgType = prop.type;
+                control.dataset.nodeArgNode = node.id;
+                control.dataset.nodeArg = prop.name;
+                control.dataset.nodeArgType = prop.type;
                 if (prop.type.includes('boolean')) {
                     control.type = 'checkbox';
                     control.checked = !!value;
@@ -2904,7 +3091,7 @@
                         }
                         markDirty();
                     } catch (error) {
-                        setStatus(`Invalid ${prop.name} value`, true);
+                        reportError(`Invalid ${prop.name} value`);
                     }
                 });
                 row.append(control);
@@ -3026,11 +3213,22 @@
             renderAbilities();
         });
         $('[data-action="new-pipe"]').addEventListener('click', newPipe);
-        $('[data-action="save"]').addEventListener('click', () => savePipe().catch((error) => setStatus(error.message, true)));
-        $('[data-action="delete"]').addEventListener('click', () => deletePipe().catch((error) => setStatus(error.message, true)));
-        $('[data-action="run"]').addEventListener('click', () => runPipe().catch((error) => setStatus(error.message, true)));
+        $('[data-action="save"]').addEventListener('click', () => savePipe().catch((error) => reportError(error.message)));
+        $('[data-action="delete"]').addEventListener('click', () => deletePipe().catch((error) => reportError(error.message)));
+        $('[data-action="run"]').addEventListener('click', () => runPipe().catch((error) => reportError(error.message)));
+        $('[data-action="toggle-inspector"]').addEventListener('click', () => {
+            state.inspectorOpen = !state.inspectorOpen;
+            renderBuilderMode();
+            renderEdges();
+        });
         $$('[data-builder-mode]').forEach((button) => {
             button.addEventListener('click', () => setBuilderMode(button.dataset.builderMode));
+        });
+        $('[data-graph]').addEventListener('click', (event) => {
+            if (!event.target.closest('.node, .input-popover')) {
+                state.visualInputPopover = null;
+                renderGraph();
+            }
         });
 
         Promise.all([loadPipes(), loadAbilities(), loadExamples()])
@@ -3043,7 +3241,7 @@
                 setStatus(`Loaded build ${config.build}`);
                 return null;
             })
-            .catch((error) => setStatus(error.message, true));
+            .catch((error) => reportError(error.message));
     })();
     </script>
 

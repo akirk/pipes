@@ -18,11 +18,24 @@
             --pipes-accent: #147d64;
             --pipes-danger: #b42318;
             --pipes-radius: 6px;
+            --pipes-masterbar-offset: 0px;
+        }
+        body.admin-bar {
+            --pipes-masterbar-offset: 32px;
+        }
+        body:has(#wpadminbar) {
+            --pipes-masterbar-offset: 32px;
         }
 
         * { box-sizing: border-box; }
+        html {
+            height: 100%;
+            overflow: hidden;
+        }
         body {
             margin: 0;
+            overflow: hidden;
+            height: 100vh;
             min-height: 100vh;
             background: var(--pipes-bg);
             color: var(--pipes-text);
@@ -77,7 +90,14 @@
         .app {
             display: grid;
             grid-template-columns: 18rem minmax(24rem, 1fr) 24rem;
-            min-height: 100vh;
+            bottom: 0;
+            height: calc(100vh - var(--pipes-masterbar-offset));
+            left: 0;
+            min-height: 0;
+            overflow: hidden;
+            position: absolute;
+            right: 0;
+            top: var(--pipes-masterbar-offset);
         }
         .app.inspector-collapsed {
             grid-template-columns: 18rem minmax(24rem, 1fr);
@@ -88,9 +108,12 @@
             min-width: 0;
         }
         .sidebar {
+            display: flex;
+            flex-direction: column;
             border-right: 1px solid var(--pipes-border);
+            min-height: 0;
             padding: 1rem;
-            overflow: auto;
+            overflow: hidden;
         }
         .inspector {
             border-left: 1px solid var(--pipes-border);
@@ -123,8 +146,11 @@
         .workspace {
             min-width: 0;
             display: grid;
-            grid-template-rows: auto auto 1fr auto;
+            grid-template-rows: auto auto 1fr;
+            height: 100%;
             min-height: 0;
+            overflow: hidden;
+            position: relative;
         }
         .topbar {
             display: grid;
@@ -192,11 +218,74 @@
         }
         .ability-search-header {
             background: var(--pipes-surface);
-            margin: 0 -1rem;
-            padding: 0 1rem 0.75rem;
             position: sticky;
             top: 0;
             z-index: 2;
+        }
+        .ability-search-header .quick-steps {
+            margin-bottom: 0;
+        }
+        .sidebar-panel {
+            border-top: 1px solid var(--pipes-border);
+            flex: 0 0 auto;
+            min-height: 0;
+            padding: 0.75rem 0 0;
+        }
+        .sidebar-panel.is-open {
+            display: flex;
+            flex: 1 1 auto;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .sidebar-panel:first-of-type {
+            border-top: 0;
+            padding-top: 0;
+        }
+        .sidebar-panel-header {
+            align-items: center;
+            background: var(--pipes-surface);
+            border: 0;
+            border-radius: var(--pipes-radius);
+            cursor: pointer;
+            display: flex;
+            gap: 0.5rem;
+            justify-content: space-between;
+            list-style: none;
+            min-height: 2rem;
+            margin-bottom: 0.75rem;
+            padding: 0.45rem 0.6rem;
+            width: 100%;
+        }
+        .sidebar-panel.is-open .sidebar-panel-header {
+            background: var(--pipes-surface);
+        }
+        .sidebar-panel-title {
+            color: var(--pipes-muted);
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+        .ability-tray {
+            min-height: 0;
+        }
+        .sidebar-panel-body {
+            display: none;
+            min-height: 0;
+        }
+        .sidebar-panel.is-open .sidebar-panel-body {
+            display: block;
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow: auto;
+            overscroll-behavior: contain;
+        }
+        .sidebar-panel.is-open .sidebar-panel-body .list {
+            overflow: visible;
+        }
+        .ability-tray.is-open .ability-search-header {
+            position: sticky;
+            top: 0;
         }
         .search {
             margin-bottom: 0.75rem;
@@ -275,9 +364,9 @@
         .canvas {
             position: relative;
             overflow: auto;
-            overscroll-behavior: auto;
-            min-height: 28rem;
-            padding: 1.25rem;
+            overscroll-behavior: contain;
+            min-height: 0;
+            padding: 1.25rem 1.25rem 4rem;
             background-image:
                 linear-gradient(var(--pipes-border) 1px, transparent 1px),
                 linear-gradient(90deg, var(--pipes-border) 1px, transparent 1px);
@@ -811,17 +900,41 @@
         .output {
             border-top: 1px solid var(--pipes-border);
             background: var(--pipes-surface);
-            padding: 1rem;
+            padding: 0;
+        }
+        details.output {
+            bottom: 0;
+            left: 0;
+            max-height: min(45vh, 22rem);
+            overflow: auto;
+            position: absolute;
+            right: 0;
+            z-index: 20;
+        }
+        details.output:not([open]) {
+            height: 2.75rem;
+            overflow: hidden;
+        }
+        details.output summary {
+            align-items: center;
+            cursor: pointer;
+            display: flex;
+            gap: 0.5rem;
+            min-height: 2.75rem;
+            padding: 0 1rem;
+            justify-content: space-between;
+            list-style: none;
+        }
+        details.output summary::-webkit-details-marker {
+            display: none;
         }
         .workspace:not(.builder-list) .output {
-            max-height: 15rem;
-            overflow: auto;
             box-shadow: 0 -6px 18px color-mix(in srgb, #000 7%, transparent);
         }
         .output pre {
             max-height: 18rem;
             overflow: auto;
-            margin: 0.5rem 0 0;
+            margin: 0.75rem 1rem 1rem;
             border: 1px solid var(--pipes-border);
             border-radius: var(--pipes-radius);
             background: var(--pipes-surface-alt);
@@ -838,7 +951,7 @@
             border-radius: var(--pipes-radius);
             background: color-mix(in srgb, var(--pipes-danger) 8%, var(--pipes-surface));
             color: var(--pipes-danger);
-            margin-top: 0.65rem;
+            margin: 0.75rem 1rem 0;
             padding: 0.65rem 0.75rem;
             overflow-wrap: anywhere;
         }
@@ -914,23 +1027,57 @@
                 border-top: 1px solid var(--pipes-border);
             }
         }
+        @media (max-width: 782px) {
+            body.admin-bar {
+                --pipes-masterbar-offset: 46px;
+            }
+        }
         @media (max-width: 760px) {
+            html {
+                overflow: auto;
+            }
+            body {
+                overflow: auto;
+            }
             .app {
                 display: flex;
                 flex-direction: column;
+                height: auto;
                 min-height: 100vh;
+                overflow: visible;
+                position: static;
             }
             .workspace {
                 order: 1;
+                height: auto;
                 min-height: 60vh;
+                overflow: visible;
+            }
+            details.output {
+                position: static;
             }
             .sidebar {
                 order: 2;
                 border-right: 0;
                 border-top: 1px solid var(--pipes-border);
                 border-bottom: 1px solid var(--pipes-border);
+                display: block;
                 max-height: 18rem;
+                overflow: auto;
                 padding: 0.75rem;
+            }
+            .ability-tray {
+                border-bottom: 0;
+                margin: 0;
+                overflow: visible;
+                padding: 0;
+            }
+            .sidebar-panel.is-open {
+                display: block;
+                overflow: visible;
+            }
+            .sidebar-panel.is-open .sidebar-panel-body {
+                overflow: visible;
             }
             .inspector {
                 display: none;
@@ -972,7 +1119,7 @@
             }
             .canvas {
                 min-height: 22rem;
-                padding: 0.75rem;
+                padding: 0.75rem 0.75rem 4rem;
             }
             .graph {
                 min-width: 34rem;
@@ -1009,26 +1156,42 @@
             <h1 class="brand">Pipes</h1>
             <button class="primary" data-action="new-pipe">New Pipe</button>
 
-            <div class="ability-tray">
-                <div class="ability-search-header">
-                    <h2 class="section-title">Abilities</h2>
-                    <input class="search" type="search" data-ability-search placeholder="Search abilities">
+            <section class="sidebar-panel ability-tray is-open" data-sidebar-panel>
+                <button type="button" class="sidebar-panel-header" data-sidebar-panel-toggle aria-expanded="true">
+                    <span class="sidebar-panel-title">Abilities</span>
+                </button>
+                <div class="sidebar-panel-body">
+                    <div class="ability-search-header">
+                        <input class="search" type="search" data-ability-search placeholder="Search abilities">
+                    </div>
                     <div class="quick-steps" data-quick-steps hidden></div>
+                    <div class="list" data-abilities-list>
+                        <div class="notice">Loading abilities...</div>
+                    </div>
                 </div>
-                <div class="list" data-abilities-list>
-                    <div class="notice">Loading abilities...</div>
+            </section>
+
+            <section class="sidebar-panel" data-sidebar-panel>
+                <button type="button" class="sidebar-panel-header" data-sidebar-panel-toggle aria-expanded="false">
+                    <span class="sidebar-panel-title">Saved</span>
+                </button>
+                <div class="sidebar-panel-body">
+                    <div class="list" data-pipes-list>
+                        <div class="notice">Loading pipes...</div>
+                    </div>
                 </div>
-            </div>
+            </section>
 
-            <h2 class="section-title">Saved</h2>
-            <div class="list" data-pipes-list>
-                <div class="notice">Loading pipes...</div>
-            </div>
-
-            <h2 class="section-title">Starters</h2>
-            <div class="list" data-examples-list>
-                <div class="notice">Loading starters...</div>
-            </div>
+            <section class="sidebar-panel" data-sidebar-panel>
+                <button type="button" class="sidebar-panel-header" data-sidebar-panel-toggle aria-expanded="false">
+                    <span class="sidebar-panel-title">Starters</span>
+                </button>
+                <div class="sidebar-panel-body">
+                    <div class="list" data-examples-list>
+                        <div class="notice">Loading starters...</div>
+                    </div>
+                </div>
+            </section>
         </aside>
 
         <main class="workspace">
@@ -1062,11 +1225,13 @@
                 </div>
             </section>
 
-            <section class="output" data-debug-output>
-                <strong>Debug Output</strong>
+            <details class="output" data-debug-output>
+                <summary>
+                    <strong>Debug Output</strong>
+                </summary>
                 <div class="run-error" data-run-error hidden></div>
                 <pre data-output>{}</pre>
-            </section>
+            </details>
         </main>
 
         <aside class="inspector" data-inspector>
@@ -1118,6 +1283,38 @@
                 return window.CSS.escape(String(value));
             }
             return String(value).replace(/["\\]/g, '\\$&');
+        };
+        const updateMasterbarOffset = () => {
+            const masterbar = document.getElementById('wpadminbar') || document.querySelector('[class*="masterbar"]');
+            const height = masterbar ? Math.ceil(masterbar.getBoundingClientRect().height) : 0;
+            document.body.style.setProperty('--pipes-masterbar-offset', `${height}px`);
+        };
+        const normalizeWheelDelta = (event) => {
+            if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) {
+                return event.deltaY * 16;
+            }
+            if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
+                return event.deltaY * window.innerHeight;
+            }
+            return event.deltaY;
+        };
+        const scrollOpenSidebarPanel = (event) => {
+            if (window.matchMedia('(max-width: 760px)').matches) {
+                return;
+            }
+            const scroller = $('.sidebar-panel.is-open .sidebar-panel-body');
+            if (!scroller) {
+                return;
+            }
+            const deltaY = normalizeWheelDelta(event);
+            if (!deltaY) {
+                return;
+            }
+            event.preventDefault();
+            scroller.scrollTop = Math.min(
+                Math.max(scroller.scrollTop + deltaY, 0),
+                scroller.scrollHeight - scroller.clientHeight
+            );
         };
 
         const request = async (path, options = {}) => {
@@ -1433,9 +1630,43 @@
             return Array.from(names);
         };
 
+        const nextDebugValueName = (names) => {
+            for (let index = 2; index < 20; index += 1) {
+                const name = `value_${index}`;
+                if (!names.has(name)) {
+                    return name;
+                }
+            }
+            return `value_${names.size + 1}`;
+        };
+
         const inputPropertiesForNode = (node) => {
             const ability = abilityById(node?.ability_id);
             const props = schemaProperties(ability?.input_schema);
+            if (node?.ability_id === 'pipes/output-debug') {
+                const existingNames = new Set(props.map((prop) => prop.name));
+                const addDebugProp = (name) => {
+                    if (!name || existingNames.has(name)) {
+                        return;
+                    }
+                    props.push({
+                        name,
+                        type: 'any',
+                        default: undefined,
+                        description: 'Additional value to inspect in this debug output.',
+                        required: false
+                    });
+                    existingNames.add(name);
+                };
+                for (const binding of node.bindings || []) {
+                    addDebugProp(binding.target);
+                }
+                for (const name of Object.keys(ensureNodeArgs(node))) {
+                    addDebugProp(name);
+                }
+                addDebugProp(nextDebugValueName(existingNames));
+                return props;
+            }
             if (node?.ability_id !== 'pipes/format-text') {
                 return props;
             }
@@ -1502,7 +1733,7 @@
         };
 
         const inputPortLabel = (prop) => (
-            typeList(prop?.type).includes('array') ? `${prop.name}[]` : prop.name
+            typeList(prop?.type).length === 1 && typeList(prop?.type)[0] === 'array' ? `${prop.name}[]` : prop.name
         );
 
         const outputPortsForNode = (node) => {
@@ -1821,6 +2052,32 @@
             return String(value);
         };
 
+        const debugPreviewValues = (node) => {
+            const run = state.lastRunResults[node.id];
+            if (!run) {
+                return undefined;
+            }
+            if (run.input && typeof run.input === 'object') {
+                const entries = Object.entries(run.input);
+                if (entries.length === 1 && Object.prototype.hasOwnProperty.call(run.input, 'value')) {
+                    return run.input.value;
+                }
+                return run.input;
+            }
+            const result = run.result;
+            if (result && typeof result === 'object' && result.values && typeof result.values === 'object') {
+                const entries = Object.entries(result.values);
+                if (entries.length === 1 && Object.prototype.hasOwnProperty.call(result.values, 'value')) {
+                    return result.values.value;
+                }
+                return result.values;
+            }
+            if (result && typeof result === 'object' && Object.prototype.hasOwnProperty.call(result, 'value')) {
+                return result.value;
+            }
+            return run.result;
+        };
+
         const appendTextElement = (parent, tagName, text) => {
             const element = document.createElement(tagName);
             element.textContent = text;
@@ -1926,21 +2183,6 @@
                 return '""';
             }
             return preview.length > 42 ? `${preview.slice(0, 39)}...` : preview;
-        };
-
-        const debugPreviewValue = (node) => {
-            const run = state.lastRunResults[node.id];
-            if (!run) {
-                return undefined;
-            }
-            if (run.input && Object.prototype.hasOwnProperty.call(run.input, 'value')) {
-                return run.input.value;
-            }
-            const result = run.result;
-            if (result && typeof result === 'object' && Object.prototype.hasOwnProperty.call(result, 'value')) {
-                return result.value;
-            }
-            return run.result;
         };
 
         const ensureActiveBindingTarget = (node, props) => {
@@ -2129,34 +2371,6 @@
             }
         };
 
-        const normalizeWheelDelta = (event) => {
-            if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) {
-                return event.deltaY * 16;
-            }
-            if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
-                return event.deltaY * window.innerHeight;
-            }
-            return event.deltaY;
-        };
-
-        const scrollPageFromCanvasWheel = (event) => {
-            if (event.defaultPrevented || event.ctrlKey || state.builderMode === 'list') {
-                return;
-            }
-            if (event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) {
-                return;
-            }
-            const scroller = document.scrollingElement || document.documentElement;
-            const deltaY = normalizeWheelDelta(event);
-            const maxScroll = scroller.scrollHeight - scroller.clientHeight;
-            const nextScroll = Math.min(Math.max(scroller.scrollTop + deltaY, 0), maxScroll);
-            if (nextScroll === scroller.scrollTop) {
-                return;
-            }
-            event.preventDefault();
-            scroller.scrollTop = nextScroll;
-        };
-
         const startConnectionDraft = (sourceId, path, event, options = {}) => {
             state.connectionDraft = {
                 sourceId,
@@ -2285,8 +2499,13 @@
 
         const defaultBindingForNode = (node, props) => {
             const source = bindingSourceNodesFor(node)[0];
+            let target = props[0]?.name || '';
+            if (node?.ability_id === 'pipes/output-debug') {
+                const usedTargets = new Set((node.bindings || []).map((binding) => binding.target).filter(Boolean));
+                target = props.find((prop) => !usedTargets.has(prop.name))?.name || target;
+            }
             return {
-                target: props[0]?.name || '',
+                target,
                 source: source?.id || '',
                 path: ''
             };
@@ -2819,9 +3038,9 @@
                 const debugContainer = $('[data-node-debug-preview]', element);
                 if (isDebugOutputNode(node)) {
                     const preview = document.createElement('pre');
-                    const value = debugPreviewValue(node);
+                    const value = debugPreviewValues(node);
                     preview.className = `node-debug-preview ${value === undefined ? 'is-empty' : ''}`;
-                    preview.textContent = value === undefined ? 'Run the pipe to inspect the bound value here.' : compactPreview(value);
+                    preview.textContent = value === undefined ? 'Run the pipe to inspect bound values here.' : compactPreview(value);
                     debugContainer.append(preview);
                 } else {
                     debugContainer.remove();
@@ -3205,6 +3424,12 @@
             container.hidden = false;
             if (isOutputNode(node)) {
                 const result = run.result;
+                if (isDebugOutputNode(node)) {
+                    $('[data-output-preview-title]', container).textContent = 'Debug output';
+                    pre.hidden = false;
+                    pre.textContent = compactPreview(debugPreviewValues(node));
+                    return;
+                }
                 const value = result && typeof result === 'object' && Object.prototype.hasOwnProperty.call(result, 'value') ?
                     result.value :
                     undefined;
@@ -4046,6 +4271,22 @@
         $$('[data-builder-mode]').forEach((button) => {
             button.addEventListener('click', () => setBuilderMode(button.dataset.builderMode));
         });
+        $$('[data-sidebar-panel-toggle]').forEach((button) => {
+            button.addEventListener('click', () => {
+                const panel = button.closest('[data-sidebar-panel]');
+                if (panel?.classList.contains('is-open')) {
+                    return;
+                }
+                $$('[data-sidebar-panel]').forEach((candidate) => {
+                    const open = candidate === panel;
+                    candidate.classList.toggle('is-open', open);
+                    $('[data-sidebar-panel-toggle]', candidate)?.setAttribute('aria-expanded', open ? 'true' : 'false');
+                });
+            });
+        });
+        updateMasterbarOffset();
+        window.addEventListener('resize', updateMasterbarOffset);
+        $('.sidebar').addEventListener('wheel', scrollOpenSidebarPanel, { passive: false });
         $('.canvas').addEventListener('dragover', (event) => {
             if (!dragHasAbility(event)) {
                 return;
@@ -4068,7 +4309,6 @@
             event.preventDefault();
             addNode(ability, state.graph.nodes.length, { position: droppedNodePosition(event) });
         });
-        $('.canvas').addEventListener('wheel', scrollPageFromCanvasWheel, { passive: false });
         $('.canvas').addEventListener('scroll', updateOutOfViewIndicator, { passive: true });
         $('[data-out-of-view-indicator]').addEventListener('click', scrollToOutOfViewNode);
         $('[data-graph]').addEventListener('click', (event) => {

@@ -375,6 +375,19 @@
             margin-top: 0.75rem;
             padding-top: 0.75rem;
         }
+        .output-preview-header {
+            align-items: center;
+            display: flex;
+            gap: 0.5rem;
+            justify-content: space-between;
+        }
+        .output-preview-title {
+            font-size: 0.86rem;
+        }
+        .output-preview-empty {
+            color: var(--pipes-muted);
+            font-size: 0.84rem;
+        }
         .output-preview pre {
             background: var(--pipes-surface-alt);
             border: 1px solid var(--pipes-border);
@@ -390,6 +403,9 @@
             display: flex;
             flex-wrap: wrap;
             gap: 0.5rem;
+        }
+        .output-preview-actions button {
+            padding: 0.35rem 0.5rem;
         }
         .rendered-output {
             background: var(--pipes-surface);
@@ -2023,11 +2039,14 @@
                     </div>
                     <div class="list-args" data-list-args></div>
                     <div class="output-preview" data-output-preview hidden>
-                        <strong data-output-preview-title>Output preview</strong>
-                        <pre></pre>
-                        <div class="output-preview-actions" data-output-preview-actions hidden>
-                            <button type="button" data-run-from-preview>Run pipe</button>
+                        <div class="output-preview-header">
+                            <strong class="output-preview-title" data-output-preview-title>Step output</strong>
+                            <div class="output-preview-actions" data-output-preview-actions hidden>
+                                <button type="button" data-run-from-preview>Run full pipe</button>
+                            </div>
                         </div>
+                        <div class="output-preview-empty" data-output-preview-empty hidden></div>
+                        <pre hidden></pre>
                         <div class="rendered-output" data-rendered-preview hidden></div>
                     </div>
                 `;
@@ -2155,8 +2174,13 @@
                 return;
             }
             const pre = $('pre', container);
+            const empty = $('[data-output-preview-empty]', container);
             const rendered = $('[data-rendered-preview]', container);
             const actions = $('[data-output-preview-actions]', container);
+            if (empty) {
+                empty.hidden = true;
+                empty.textContent = '';
+            }
             if (rendered) {
                 rendered.hidden = true;
                 rendered.innerHTML = '';
@@ -2172,19 +2196,18 @@
                     };
                 }
             }
-            pre.hidden = false;
+            pre.hidden = true;
+            pre.textContent = '';
             const run = state.lastRunResults[node.id];
             if (!run) {
-                if (isOutputNode(node)) {
-                    container.hidden = false;
-                    $('[data-output-preview-title]', container).textContent = 'Output preview';
-                    pre.hidden = true;
-                    pre.textContent = '';
-                    if (actions) {
-                        actions.hidden = false;
-                    }
-                } else {
-                    container.hidden = true;
+                container.hidden = false;
+                $('[data-output-preview-title]', container).textContent = isOutputNode(node) ? 'Rendered output' : 'Step output';
+                if (empty) {
+                    empty.hidden = false;
+                    empty.textContent = 'Run the full pipe to inspect what this step sends to the next step.';
+                }
+                if (actions) {
+                    actions.hidden = false;
                 }
                 return;
             }
@@ -2195,7 +2218,7 @@
                     result.value :
                     undefined;
                 const inputValue = run.input && Object.prototype.hasOwnProperty.call(run.input, 'value') ? run.input.value : undefined;
-                $('[data-output-preview-title]', container).textContent = 'Output preview';
+                $('[data-output-preview-title]', container).textContent = 'Rendered output';
                 if (isDashboardOutputNode(node) && rendered) {
                     pre.hidden = true;
                     rendered.hidden = false;
@@ -2208,10 +2231,12 @@
                     }
                     return;
                 }
+                pre.hidden = false;
                 pre.textContent = `Input value:\n${compactPreview(inputValue)}\n\nRendered value:\n${compactPreview(value)}`;
                 return;
             }
-            $('[data-output-preview-title]', container).textContent = 'Node output';
+            $('[data-output-preview-title]', container).textContent = 'Step output';
+            pre.hidden = false;
             pre.textContent = compactPreview(run.result);
         };
 
@@ -2470,11 +2495,14 @@
                     <button data-action="add-binding">Add Binding</button>
                 </div>
                 <div class="output-preview" data-inspector-output-preview hidden>
-                    <strong data-output-preview-title>Output preview</strong>
-                    <pre></pre>
-                    <div class="output-preview-actions" data-output-preview-actions hidden>
-                        <button type="button" data-run-from-preview>Run pipe</button>
+                    <div class="output-preview-header">
+                        <strong class="output-preview-title" data-output-preview-title>Step output</strong>
+                        <div class="output-preview-actions" data-output-preview-actions hidden>
+                            <button type="button" data-run-from-preview>Run full pipe</button>
+                        </div>
                     </div>
+                    <div class="output-preview-empty" data-output-preview-empty hidden></div>
+                    <pre hidden></pre>
                     <div class="rendered-output" data-rendered-preview hidden></div>
                 </div>
                 <button class="danger" data-action="remove-node">Remove Node</button>

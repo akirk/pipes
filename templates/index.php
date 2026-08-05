@@ -963,6 +963,10 @@
         const setRunError = (message = '') => {
             state.runError = message;
             const runError = $('[data-run-error]');
+            console.log('[Pipes run debug] setRunError', {
+                message,
+                hasElement: !!runError
+            });
             if (!runError) {
                 return;
             }
@@ -973,12 +977,25 @@
         const setRunOutput = (value) => {
             state.runOutput = value;
             const output = $('[data-output]');
+            console.log('[Pipes run debug] setRunOutput', {
+                length: value.length,
+                preview: value.slice(0, 180),
+                hasElement: !!output
+            });
             if (output) {
                 output.textContent = value;
             }
         };
 
         const renderRunOutput = () => {
+            console.log('[Pipes run debug] renderRunOutput', {
+                outputLength: state.runOutput.length,
+                error: state.runError,
+                hasOutputElement: !!$('[data-output]'),
+                hasErrorElement: !!$('[data-run-error]'),
+                outputHidden: $('[data-output]')?.hidden,
+                errorHidden: $('[data-run-error]')?.hidden
+            });
             setRunError(state.runError);
             setRunOutput(state.runOutput);
         };
@@ -1786,6 +1803,10 @@
         };
 
         const runPipe = async () => {
+            console.log('[Pipes run debug] runPipe:start', {
+                selectedPipeId: state.selectedPipeId,
+                nodeCount: state.graph.nodes.length
+            });
             setStatus('Running...');
             setRunError();
             flushListArgs();
@@ -1801,6 +1822,7 @@
                         user_answers: userAnswers
                     })
                 });
+                console.log('[Pipes run debug] runPipe:success', data);
                 state.lastRunResults = data.results || {};
                 setRunOutput(JSON.stringify(data, null, 2));
                 setRunError();
@@ -1808,17 +1830,32 @@
                 render();
             } catch (error) {
                 const errorOutput = error.response || { message: error.message, data: error.data };
-                setRunOutput([
+                const outputText = [
                     error.message,
                     '',
                     JSON.stringify(errorOutput, null, 2)
-                ].join('\n'));
+                ].join('\n');
+                console.log('[Pipes run debug] runPipe:error', {
+                    message: error.message,
+                    data: error.data,
+                    response: error.response,
+                    outputText
+                });
+                setRunOutput(outputText);
                 if (error.data?.results) {
                     state.lastRunResults = error.data.results;
+                    console.log('[Pipes run debug] runPipe:error-render-with-results', {
+                        resultCount: error.data.results.length
+                    });
                     render();
                 }
                 setRunError(error.message);
                 setStatus('Run failed', true);
+                console.log('[Pipes run debug] runPipe:error-after-dom', {
+                    outputText: $('[data-output]')?.textContent,
+                    runErrorText: $('[data-run-error]')?.textContent,
+                    runErrorHidden: $('[data-run-error]')?.hidden
+                });
             }
         };
 

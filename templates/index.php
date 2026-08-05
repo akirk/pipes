@@ -388,6 +388,10 @@
             color: var(--pipes-muted);
             font-size: 0.84rem;
         }
+        .output-preview-empty.error {
+            color: var(--pipes-danger);
+            overflow-wrap: anywhere;
+        }
         .output-preview pre {
             background: var(--pipes-surface-alt);
             border: 1px solid var(--pipes-border);
@@ -963,10 +967,6 @@
         const setRunError = (message = '') => {
             state.runError = message;
             const runError = $('[data-run-error]');
-            console.log('[Pipes run debug] setRunError', {
-                message,
-                hasElement: !!runError
-            });
             if (!runError) {
                 return;
             }
@@ -977,25 +977,12 @@
         const setRunOutput = (value) => {
             state.runOutput = value;
             const output = $('[data-output]');
-            console.log('[Pipes run debug] setRunOutput', {
-                length: value.length,
-                preview: value.slice(0, 180),
-                hasElement: !!output
-            });
             if (output) {
                 output.textContent = value;
             }
         };
 
         const renderRunOutput = () => {
-            console.log('[Pipes run debug] renderRunOutput', {
-                outputLength: state.runOutput.length,
-                error: state.runError,
-                hasOutputElement: !!$('[data-output]'),
-                hasErrorElement: !!$('[data-run-error]'),
-                outputHidden: $('[data-output]')?.hidden,
-                errorHidden: $('[data-run-error]')?.hidden
-            });
             setRunError(state.runError);
             setRunOutput(state.runOutput);
         };
@@ -1803,10 +1790,6 @@
         };
 
         const runPipe = async () => {
-            console.log('[Pipes run debug] runPipe:start', {
-                selectedPipeId: state.selectedPipeId,
-                nodeCount: state.graph.nodes.length
-            });
             setStatus('Running...');
             setRunError();
             flushListArgs();
@@ -1822,7 +1805,6 @@
                         user_answers: userAnswers
                     })
                 });
-                console.log('[Pipes run debug] runPipe:success', data);
                 state.lastRunResults = data.results || {};
                 setRunOutput(JSON.stringify(data, null, 2));
                 setRunError();
@@ -1835,27 +1817,13 @@
                     '',
                     JSON.stringify(errorOutput, null, 2)
                 ].join('\n');
-                console.log('[Pipes run debug] runPipe:error', {
-                    message: error.message,
-                    data: error.data,
-                    response: error.response,
-                    outputText
-                });
                 setRunOutput(outputText);
+                setRunError(error.message);
                 if (error.data?.results) {
                     state.lastRunResults = error.data.results;
-                    console.log('[Pipes run debug] runPipe:error-render-with-results', {
-                        resultCount: error.data.results.length
-                    });
                     render();
                 }
-                setRunError(error.message);
                 setStatus('Run failed', true);
-                console.log('[Pipes run debug] runPipe:error-after-dom', {
-                    outputText: $('[data-output]')?.textContent,
-                    runErrorText: $('[data-run-error]')?.textContent,
-                    runErrorHidden: $('[data-run-error]')?.hidden
-                });
             }
         };
 
@@ -2238,6 +2206,7 @@
             if (empty) {
                 empty.hidden = true;
                 empty.textContent = '';
+                empty.classList.remove('error');
             }
             if (rendered) {
                 rendered.hidden = true;
@@ -2262,7 +2231,12 @@
                 $('[data-output-preview-title]', container).textContent = isOutputNode(node) ? 'Rendered output' : 'Step output';
                 if (empty) {
                     empty.hidden = false;
-                    empty.textContent = 'Run the full pipe to inspect what this step sends to the next step.';
+                    if (state.runError) {
+                        empty.classList.add('error');
+                        empty.textContent = state.runError;
+                    } else {
+                        empty.textContent = 'Run the full pipe to inspect what this step sends to the next step.';
+                    }
                 }
                 if (actions) {
                     actions.hidden = false;

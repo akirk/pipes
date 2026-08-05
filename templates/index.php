@@ -710,6 +710,20 @@
         .input-port {
             padding-left: 0.7rem;
         }
+        .input-port.has-value {
+            display: grid;
+            gap: 0.16rem;
+        }
+        .port-value {
+            color: var(--pipes-muted);
+            display: block;
+            font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+            font-size: 0.66rem;
+            line-height: 1.25;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
         .input-port::before {
             left: -1.16rem;
         }
@@ -1854,6 +1868,21 @@
             return String(value);
         };
 
+        const inputValuePreview = (node, portName) => {
+            const value = ensureNodeArgs(node)[portName];
+            if (value === undefined) {
+                return '';
+            }
+            if (value && typeof value === 'object' && value.__pipes_user_query) {
+                return 'Ask user';
+            }
+            const preview = compactPreview(value).replace(/\s+/g, ' ').trim();
+            if (!preview) {
+                return '""';
+            }
+            return preview.length > 42 ? `${preview.slice(0, 39)}...` : preview;
+        };
+
         const debugPreviewValue = (node) => {
             const run = state.lastRunResults[node.id];
             if (!run) {
@@ -2769,8 +2798,20 @@
                     if (node.id === state.selectedNodeId && state.activeBindingTarget === port.name) {
                         input.classList.add('active');
                     }
-                    input.title = port.title || port.label;
-                    input.textContent = port.label;
+                    const manualPreview = inputBinding ? '' : inputValuePreview(node, port.name);
+                    input.title = manualPreview ? `${port.title || port.label}: ${manualPreview}` : (port.title || port.label);
+                    if (manualPreview) {
+                        input.classList.add('has-value');
+                    }
+                    const label = document.createElement('span');
+                    label.textContent = port.label;
+                    input.append(label);
+                    if (manualPreview) {
+                        const preview = document.createElement('span');
+                        preview.className = 'port-value';
+                        preview.textContent = manualPreview;
+                        input.append(preview);
+                    }
                     input.addEventListener('click', (event) => {
                         event.stopPropagation();
                         if (completeConnectionDraft(node, port.name)) {

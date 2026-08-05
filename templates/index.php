@@ -988,6 +988,7 @@
                     </div>
                     <button data-action="save">Save</button>
                     <button data-action="run">Run</button>
+                    <button data-action="undo" disabled>Undo</button>
                     <button data-action="toggle-inspector" aria-pressed="false">Show Inspector</button>
                     <button class="danger" data-action="delete">Delete</button>
                 </div>
@@ -1045,10 +1046,13 @@
             visualInputPopover: null,
             connectionDraft: null,
             inspectorOpen: false,
+            undoStack: [],
+            undoBaseline: null,
             dirty: false
         };
 
         const draftKey = 'pipes.builderDraft.v1';
+        const maxUndoSteps = 50;
 
         const $ = (selector, root = document) => root.querySelector(selector);
         const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
@@ -1122,6 +1126,85 @@
             setRunOutput(state.runOutput);
         };
 
+        const cloneJson = (value) => JSON.parse(JSON.stringify(value));
+
+        const editableSnapshot = () => ({
+            selectedPipeId: state.selectedPipeId,
+            selectedNodeId: state.selectedNodeId,
+            title: state.title,
+            graph: cloneJson(state.graph),
+            activeBindingTarget: state.activeBindingTarget,
+            builderMode: state.builderMode
+        });
+
+        const sameSnapshot = (left, right) => JSON.stringify(left) === JSON.stringify(right);
+
+        const renderUndoState = () => {
+            const undo = $('[data-action="undo"]');
+            if (undo) {
+                undo.disabled = !state.undoStack.length;
+            }
+        };
+
+        const resetUndoHistory = () => {
+            state.undoStack = [];
+            state.undoBaseline = editableSnapshot();
+            renderUndoState();
+        };
+
+        const captureUndoStep = () => {
+            const current = editableSnapshot();
+            if (!state.undoBaseline) {
+                state.undoBaseline = current;
+                renderUndoState();
+                return;
+            }
+            if (sameSnapshot(state.undoBaseline, current)) {
+                renderUndoState();
+                return;
+            }
+            state.undoStack.push(state.undoBaseline);
+            if (state.undoStack.length > maxUndoSteps) {
+                state.undoStack.shift();
+            }
+            state.undoBaseline = current;
+            renderUndoState();
+        };
+
+        const applySnapshot = (snapshot) => {
+            state.selectedPipeId = snapshot.selectedPipeId || null;
+            state.selectedNodeId = snapshot.selectedNodeId || snapshot.graph?.nodes?.[0]?.id || null;
+            state.title = snapshot.title || 'Untitled Pipe';
+            state.graph = snapshot.graph || { nodes: [], edges: [] };
+            normalizeGraphArgs();
+            state.lastRunResults = {};
+            state.activeBindingTarget = snapshot.activeBindingTarget || '';
+            state.builderMode = snapshot.builderMode === 'list' ? 'list' : 'visual';
+            state.listAddOpen = false;
+            state.listAddIndex = null;
+            state.listAddSearch = '';
+            state.visualInputPopover = null;
+            state.connectionDraft = null;
+            $('[data-title]').value = state.title;
+            clearRunResults();
+            setPipeUrl(state.selectedPipeId);
+        };
+
+        const undoLastChange = () => {
+            const snapshot = state.undoStack.pop();
+            if (!snapshot) {
+                renderUndoState();
+                return;
+            }
+            applySnapshot(snapshot);
+            state.dirty = true;
+            state.undoBaseline = editableSnapshot();
+            saveLocalDraft();
+            setWorkspaceMessage();
+            setStatus('Unsaved changes');
+            render();
+        };
+
         const showDebugOutput = () => {
             if (state.builderMode !== 'visual') {
                 return;
@@ -1183,12 +1266,14 @@
             clearRunResults();
             setPipeUrl(state.selectedPipeId);
             render();
+            resetUndoHistory();
             setStatus(`Restored unsaved draft${draft.savedAt ? ` from ${new Date(draft.savedAt).toLocaleString()}` : ''}`);
             return true;
         };
 
         const markDirty = () => {
             state.dirty = true;
+            captureUndoStep();
             setStatus('Unsaved changes');
             saveLocalDraft();
         };
@@ -1949,6 +2034,7 @@
             setPipeUrl();
             setStatus('Not saved');
             render();
+            resetUndoHistory();
             $('[data-ability-search]')?.focus();
         };
 
@@ -1978,6 +2064,7 @@
             await loadPipes();
             await loadExamples();
             render();
+            resetUndoHistory();
         };
 
         const loadPipe = async (id, updateUrl = true) => {
@@ -2004,6 +2091,7 @@
             }
             setStatus('Saved');
             render();
+            resetUndoHistory();
         };
 
         const savePipe = async () => {
@@ -2025,6 +2113,7 @@
             setPipeUrl(state.selectedPipeId);
             await loadPipes();
             render();
+            resetUndoHistory();
             setWorkspaceMessage();
             setStatus(savedArgsStatus());
         };
@@ -3370,6 +3459,7 @@
             renderListBuilder();
             renderInspector();
             renderRunOutput();
+            renderUndoState();
         };
 
         $('[data-title]').addEventListener('input', (event) => {
@@ -3384,6 +3474,7 @@
         $('[data-action="save"]').addEventListener('click', () => savePipe().catch((error) => reportError(error.message)));
         $('[data-action="delete"]').addEventListener('click', () => deletePipe().catch((error) => reportError(error.message)));
         $('[data-action="run"]').addEventListener('click', () => runPipe().catch((error) => reportError(error.message)));
+        $('[data-action="undo"]').addEventListener('click', undoLastChange);
         $('[data-action="toggle-inspector"]').addEventListener('click', () => {
             state.inspectorOpen = !state.inspectorOpen;
             renderBuilderMode();
@@ -3417,6 +3508,7 @@
                     return loadPipe(pipeId, false).then(() => setStatus(`Loaded build ${config.build}`));
                 }
                 render();
+                resetUndoHistory();
                 setStatus(`Loaded build ${config.build}`);
                 return null;
             })

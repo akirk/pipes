@@ -1791,11 +1791,12 @@
                 setStatus(state.dirty ? 'Unsaved changes' : 'Run complete');
                 render();
             } catch (error) {
+                const errorOutput = error.response || { message: error.message, data: error.data };
                 if (error.data?.results) {
                     state.lastRunResults = error.data.results;
-                    $('[data-output]').textContent = JSON.stringify(error.response || { message: error.message, data: error.data }, null, 2);
                     render();
                 }
+                $('[data-output]').textContent = JSON.stringify(errorOutput, null, 2);
                 setRunError(error.message);
                 setStatus('Run failed', true);
             }

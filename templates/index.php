@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php wp_app_title(); ?></title>
+    <title><?php echo wp_app_title( __( 'Pipes', 'pipes' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- wp_app_title escapes. ?></title>
     <?php wp_app_head(); ?>
     <style>
         :root {
@@ -1205,13 +1205,6 @@
             render();
         };
 
-        const showDebugOutput = () => {
-            if (state.builderMode !== 'visual') {
-                return;
-            }
-            $('[data-debug-output]')?.scrollIntoView({ block: 'end', behavior: 'smooth' });
-        };
-
         const saveLocalDraft = () => {
             try {
                 window.localStorage.setItem(draftKey, JSON.stringify({
@@ -1400,7 +1393,11 @@
             const ability = abilityById(node.ability_id);
             const props = schemaProperties(ability?.input_schema);
             const ports = props.length ?
-                props.slice(0, 6).map((prop) => ({ name: prop.name, label: prop.name })) :
+                props.slice(0, 6).map((prop) => ({
+                    name: prop.name,
+                    label: inputPortLabel(prop),
+                    title: prop.description || prop.name
+                })) :
                 Object.keys(ensureNodeArgs(node)).slice(0, 6).map((key) => ({ name: key, label: key }));
             for (const binding of node.bindings || []) {
                 if (binding.target && !ports.some((port) => port.name === binding.target)) {
@@ -1409,6 +1406,10 @@
             }
             return ports;
         };
+
+        const inputPortLabel = (prop) => (
+            typeList(prop?.type).includes('array') ? `${prop.name}[]` : prop.name
+        );
 
         const outputPortsForNode = (node) => {
             const runResult = state.lastRunResults[node.id]?.result;
@@ -1419,25 +1420,31 @@
                     .slice(0, 6)
                     .map((item) => ({
                         path: item.path,
-                        label: item.path,
+                        label: outputPortLabel(item.path, valueType(item.value)),
                         value: formatPathValue(item.value),
-                        type: valueType(item.value)
+                        type: valueType(item.value),
+                        title: pathDescription(item.path, item.value)
                     }));
             } else {
                 const ability = abilityById(node.ability_id);
                 const props = schemaProperties(ability?.output_schema);
                 ports = props.length ?
-                    props.slice(0, 6).map((prop) => ({ path: prop.name, label: prop.name, value: prop.type, type: prop.type })) :
+                    props.slice(0, 6).map((prop) => ({ path: prop.name, label: outputPortLabel(prop.name, prop.type), value: prop.type, type: prop.type })) :
                     [{ path: '', label: 'result', value: '', type: 'any' }];
             }
             for (const targetNode of state.graph.nodes) {
                 for (const binding of targetNode.bindings || []) {
                     if (binding.source === node.id && !ports.some((port) => port.path === (binding.path || ''))) {
-                        ports.push({ path: binding.path || '', label: binding.path || 'result', value: 'bound', type: 'any' });
+                        ports.push({ path: binding.path || '', label: pathLabel(binding.path || '') || 'result', value: 'bound', type: 'any' });
                     }
                 }
             }
             return ports;
+        };
+
+        const outputPortLabel = (path, type = 'any') => {
+            const label = pathLabel(path);
+            return typeList(type).includes('array') && !label.endsWith('[]') ? `${label}[]` : label;
         };
 
         const nodeHasOutput = (node) => {
@@ -1510,6 +1517,31 @@
                 flattenPaths(item, prefix ? `${prefix}.${key}` : key, paths);
             });
             return paths;
+        };
+
+        const pathLabel = (path) => {
+            const parts = String(path || '').split('.').filter(Boolean);
+            if (!parts.length) {
+                return 'result';
+            }
+            return parts.reduce((label, part) => {
+                if (/^\d+$/.test(part)) {
+                    return `${label || 'item'}[]`;
+                }
+                return label ? `${label}.${part}` : part;
+            }, '');
+        };
+
+        const pathDescription = (path, value) => {
+            const label = pathLabel(path);
+            const indexedParts = String(path || '').split('.').filter((part) => /^\d+$/.test(part));
+            const valuePreview = formatPathValue(value);
+            if (!indexedParts.length) {
+                return valuePreview ? `${label}: ${valuePreview}` : label;
+            }
+            const firstIndex = indexedParts[0];
+            const description = firstIndex === '0' ? 'first array item' : `array item ${Number(firstIndex) + 1}`;
+            return valuePreview ? `${label} (${description}): ${valuePreview}` : `${label} (${description})`;
         };
 
         const pathValue = (value, path) => {
@@ -2155,7 +2187,6 @@
                 setWorkspaceMessage();
                 setStatus(state.dirty ? 'Unsaved changes' : 'Run complete');
                 render();
-                showDebugOutput();
             } catch (error) {
                 const errorOutput = error.response || { message: error.message, data: error.data };
                 const outputText = [
@@ -2171,7 +2202,6 @@
                 }
                 setWorkspaceMessage(error.message, true);
                 setStatus('Run failed', true);
-                showDebugOutput();
             }
         };
 
@@ -2405,6 +2435,7 @@
                     if (node.id === state.selectedNodeId && state.activeBindingTarget === port.name) {
                         input.classList.add('active');
                     }
+                    input.title = port.title || port.label;
                     input.textContent = port.label;
                     input.addEventListener('click', (event) => {
                         event.stopPropagation();
@@ -2448,7 +2479,7 @@
                     if (state.connectionDraft?.sourceId === node.id && state.connectionDraft.path === (port.path || '')) {
                         output.classList.add('active');
                     }
-                    output.title = port.value ? `${port.label}: ${port.value}` : port.label;
+                    output.title = port.title || (port.value ? `${port.label}: ${port.value}` : port.label);
                     output.textContent = port.label;
                     output.addEventListener('click', (event) => {
                         event.stopPropagation();
@@ -3261,7 +3292,7 @@
                     const pathSelect = document.createElement('select');
                     const ports = source ? compatibleOutputPortsFor(source, prop) : [];
                     if (!ports.some((port) => port.path === (binding.path || ''))) {
-                        ports.unshift({ path: binding.path || '', label: binding.path || 'result', value: 'bound', type: 'any' });
+                        ports.unshift({ path: binding.path || '', label: pathLabel(binding.path || '') || 'result', value: 'bound', type: 'any' });
                     }
                     for (const port of ports) {
                         const option = document.createElement('option');

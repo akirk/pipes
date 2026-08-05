@@ -56,9 +56,16 @@
             background: var(--pipes-surface);
             padding: 0.55rem 0.65rem;
         }
-        input[type="checkbox"] {
-            width: auto;
+        input[type="checkbox"],
+        input[type="radio"] {
+            accent-color: var(--pipes-accent);
+            background: transparent;
+            border: 0;
+            flex: 0 0 auto;
+            height: auto;
+            margin: 0;
             padding: 0;
+            width: auto;
         }
         textarea {
             min-height: 8rem;
@@ -138,6 +145,17 @@
             color: var(--pipes-muted);
             text-transform: uppercase;
             letter-spacing: 0.06em;
+        }
+        .section-title:first-of-type {
+            margin-top: 1rem;
+        }
+        .ability-search-header {
+            background: var(--pipes-surface);
+            margin: 0 -1rem;
+            padding: 0 1rem 0.75rem;
+            position: sticky;
+            top: 0;
+            z-index: 2;
         }
         .search {
             margin-bottom: 0.75rem;
@@ -237,6 +255,12 @@
         .flow-step-main {
             min-width: 0;
         }
+        .flow-step-title-row {
+            align-items: center;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 0.5rem;
+        }
         .flow-step-number {
             align-items: center;
             background: var(--pipes-surface-alt);
@@ -263,14 +287,17 @@
         }
         .flow-step-actions {
             display: flex;
-            flex-wrap: wrap;
-            gap: 0.35rem;
-            justify-content: flex-start;
-            margin-top: 0.75rem;
+            gap: 0.25rem;
+            justify-content: flex-end;
         }
         .flow-step-actions button {
-            flex: 0 0 auto;
-            padding: 0.35rem 0.5rem;
+            align-items: center;
+            display: inline-flex;
+            height: 1.8rem;
+            justify-content: center;
+            line-height: 1;
+            padding: 0;
+            width: 1.8rem;
         }
         .list-args {
             border-top: 1px solid var(--pipes-border);
@@ -280,13 +307,37 @@
             padding-top: 0.75rem;
         }
         .list-arg {
-            display: grid;
-            gap: 0.35rem;
+            border: 1px solid var(--pipes-border);
+            border-radius: var(--pipes-radius);
+            background: color-mix(in srgb, var(--pipes-surface) 76%, var(--pipes-surface-alt));
+            padding: 0.5rem 0.6rem;
         }
-        .list-arg label {
+        .list-arg[open] {
+            display: grid;
+            gap: 0.45rem;
+        }
+        .list-arg summary {
             color: var(--pipes-muted);
+            cursor: pointer;
             font-size: 0.78rem;
             font-weight: 600;
+            list-style-position: inside;
+        }
+        .input-mode {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+        }
+        .input-mode label {
+            align-items: center;
+            color: var(--pipes-text);
+            display: inline-flex;
+            font-size: 0.84rem;
+            font-weight: 500;
+            gap: 0.35rem;
+        }
+        .input-mode input {
+            flex: 0 0 auto;
         }
         .list-arg textarea {
             min-height: 4rem;
@@ -324,6 +375,23 @@
             margin-top: 0.75rem;
             padding-top: 0.75rem;
         }
+        .output-preview-header {
+            align-items: center;
+            display: flex;
+            gap: 0.5rem;
+            justify-content: space-between;
+        }
+        .output-preview-title {
+            font-size: 0.86rem;
+        }
+        .output-preview-empty {
+            color: var(--pipes-muted);
+            font-size: 0.84rem;
+        }
+        .output-preview-empty.error {
+            color: var(--pipes-danger);
+            overflow-wrap: anywhere;
+        }
         .output-preview pre {
             background: var(--pipes-surface-alt);
             border: 1px solid var(--pipes-border);
@@ -339,6 +407,9 @@
             display: flex;
             flex-wrap: wrap;
             gap: 0.5rem;
+        }
+        .output-preview-actions button {
+            padding: 0.35rem 0.5rem;
         }
         .rendered-output {
             background: var(--pipes-surface);
@@ -555,6 +626,18 @@
             overflow-wrap: anywhere;
             font-size: 0.82rem;
         }
+        .run-error {
+            border: 1px solid color-mix(in srgb, var(--pipes-danger) 38%, var(--pipes-border));
+            border-radius: var(--pipes-radius);
+            background: color-mix(in srgb, var(--pipes-danger) 8%, var(--pipes-surface));
+            color: var(--pipes-danger);
+            margin-top: 0.65rem;
+            padding: 0.65rem 0.75rem;
+            overflow-wrap: anywhere;
+        }
+        .run-error[hidden] {
+            display: none;
+        }
         .field {
             display: grid;
             gap: 0.35rem;
@@ -701,6 +784,10 @@
             .brand {
                 margin-bottom: 0.6rem;
             }
+            .ability-search-header {
+                margin: 0 -0.75rem;
+                padding: 0 0.75rem 0.75rem;
+            }
             .section-title {
                 margin-top: 0.85rem;
             }
@@ -711,12 +798,10 @@
                 padding: 0.55rem;
             }
             .flow-step-actions {
-                display: grid;
-                grid-template-columns: repeat(2, minmax(0, 1fr));
+                justify-content: flex-start;
             }
             .flow-step-actions button {
                 min-width: 0;
-                width: 100%;
             }
             .canvas {
                 min-height: 22rem;
@@ -757,6 +842,16 @@
             <h1 class="brand">Pipes</h1>
             <button class="primary" data-action="new-pipe">New Pipe</button>
 
+            <div class="ability-tray">
+                <div class="ability-search-header">
+                    <h2 class="section-title">Abilities</h2>
+                    <input class="search" type="search" data-ability-search placeholder="Search abilities">
+                </div>
+                <div class="list" data-abilities-list>
+                    <div class="notice">Loading abilities...</div>
+                </div>
+            </div>
+
             <h2 class="section-title">Saved</h2>
             <div class="list" data-pipes-list>
                 <div class="notice">Loading pipes...</div>
@@ -765,12 +860,6 @@
             <h2 class="section-title">Starters</h2>
             <div class="list" data-examples-list>
                 <div class="notice">Loading starters...</div>
-            </div>
-
-            <h2 class="section-title">Abilities</h2>
-            <input class="search" type="search" data-ability-search placeholder="Search abilities">
-            <div class="list" data-abilities-list>
-                <div class="notice">Loading abilities...</div>
             </div>
         </aside>
 
@@ -802,6 +891,7 @@
 
             <section class="output">
                 <strong>Run Output</strong>
+                <div class="run-error" data-run-error hidden></div>
                 <pre data-output>{}</pre>
             </section>
         </main>
@@ -829,11 +919,14 @@
             title: 'Untitled Pipe',
             graph: { nodes: [], edges: [] },
             lastRunResults: {},
+            runOutput: '{}',
+            runError: '',
             activeBindingTarget: '',
             builderMode: window.matchMedia('(max-width: 760px)').matches ? 'list' : 'visual',
             listAddOpen: false,
             listAddIndex: null,
             listAddSearch: '',
+            openListArg: '',
             dirty: false
         };
 
@@ -871,6 +964,29 @@
             status.classList.toggle('error', isError);
         };
 
+        const setRunError = (message = '') => {
+            state.runError = message;
+            const runError = $('[data-run-error]');
+            if (!runError) {
+                return;
+            }
+            runError.textContent = message;
+            runError.hidden = !message;
+        };
+
+        const setRunOutput = (value) => {
+            state.runOutput = value;
+            const output = $('[data-output]');
+            if (output) {
+                output.textContent = value;
+            }
+        };
+
+        const renderRunOutput = () => {
+            setRunError(state.runError);
+            setRunOutput(state.runOutput);
+        };
+
         const markDirty = () => {
             state.dirty = true;
             setStatus('Unsaved changes');
@@ -878,7 +994,8 @@
 
         const clearRunResults = () => {
             state.lastRunResults = {};
-            $('[data-output]').textContent = '{}';
+            setRunError();
+            setRunOutput('{}');
         };
 
         const normalizeArgs = (args) => {
@@ -1585,10 +1702,11 @@
             state.listAddSearch = '';
             state.dirty = false;
             $('[data-title]').value = state.title;
-            $('[data-output]').textContent = '{}';
+            clearRunResults();
             setPipeUrl();
             setStatus('Not saved');
             render();
+            $('[data-ability-search]')?.focus();
         };
 
         const loadExample = async (example) => {
@@ -1606,7 +1724,7 @@
             state.listAddSearch = '';
             state.dirty = false;
             $('[data-title]').value = state.title;
-            $('[data-output]').textContent = '{}';
+            clearRunResults();
             setPipeUrl(state.selectedPipeId);
             setStatus('Starter pipe loaded');
             await loadPipes();
@@ -1628,7 +1746,7 @@
             state.listAddSearch = '';
             state.dirty = false;
             $('[data-title]').value = state.title;
-            $('[data-output]').textContent = '{}';
+            clearRunResults();
             if (updateUrl) {
                 setPipeUrl(state.selectedPipeId);
             }
@@ -1673,6 +1791,7 @@
 
         const runPipe = async () => {
             setStatus('Running...');
+            setRunError();
             flushListArgs();
             normalizeGraphArgs();
             const userAnswers = collectUserAnswers();
@@ -1687,16 +1806,24 @@
                     })
                 });
                 state.lastRunResults = data.results || {};
-                $('[data-output]').textContent = JSON.stringify(data, null, 2);
+                setRunOutput(JSON.stringify(data, null, 2));
+                setRunError();
                 setStatus(state.dirty ? 'Unsaved changes' : 'Run complete');
                 render();
             } catch (error) {
+                const errorOutput = error.response || { message: error.message, data: error.data };
+                const outputText = [
+                    error.message,
+                    '',
+                    JSON.stringify(errorOutput, null, 2)
+                ].join('\n');
+                setRunOutput(outputText);
+                setRunError(error.message);
                 if (error.data?.results) {
                     state.lastRunResults = error.data.results;
-                    $('[data-output]').textContent = JSON.stringify(error.response || { message: error.message, data: error.data }, null, 2);
                     render();
                 }
-                setStatus(error.message, true);
+                setStatus('Run failed', true);
             }
         };
 
@@ -1832,10 +1959,6 @@
                             <div data-output-ports></div>
                         </div>
                     </div>
-                    <div class="node-footer">
-                        <button data-move="-1">Left</button>
-                        <button data-move="1">Right</button>
-                    </div>
                 `;
                 $('h2', element).textContent = node.label || ability?.label || node.ability_id;
                 $('.node-id', element).textContent = node.id;
@@ -1900,13 +2023,7 @@
                         event.preventDefault();
                         return;
                     }
-                    if (event.target.matches('[data-move]')) {
-                        const direction = Number(event.target.dataset.move);
-                        node.position.x = Math.max(28, node.position.x + direction * 40);
-                        markDirty();
-                    } else {
-                        state.selectedNodeId = node.id;
-                    }
+                    state.selectedNodeId = node.id;
                     render();
                 });
                 attachNodeDrag(element, node);
@@ -1934,23 +2051,28 @@
                     <div class="flow-step-header">
                         <div class="flow-step-number"></div>
                         <div class="flow-step-main">
-                            <input class="flow-step-title" type="text" data-step-label>
+                            <div class="flow-step-title-row">
+                                <input class="flow-step-title" type="text" data-step-label>
+                                <div class="flow-step-actions">
+                                    <button type="button" data-step-action="up" aria-label="Move step up" title="Move step up">↑</button>
+                                    <button type="button" data-step-action="down" aria-label="Move step down" title="Move step down">↓</button>
+                                    <button type="button" class="danger" data-step-action="remove" aria-label="Remove step" title="Remove step">×</button>
+                                </div>
+                            </div>
                             <div class="meta"></div>
                             <div class="badge-row"></div>
                         </div>
                     </div>
-                    <div class="flow-step-actions">
-                        <button data-step-action="up">Up</button>
-                        <button data-step-action="down">Down</button>
-                        <button class="danger" data-step-action="remove">Remove</button>
-                    </div>
                     <div class="list-args" data-list-args></div>
                     <div class="output-preview" data-output-preview hidden>
-                        <strong data-output-preview-title>Output preview</strong>
-                        <pre></pre>
-                        <div class="output-preview-actions" data-output-preview-actions hidden>
-                            <button type="button" data-run-from-preview>Run pipe</button>
+                        <div class="output-preview-header">
+                            <strong class="output-preview-title" data-output-preview-title>Step output</strong>
+                            <div class="output-preview-actions" data-output-preview-actions hidden>
+                                <button type="button" data-run-from-preview>Run full pipe</button>
+                            </div>
                         </div>
+                        <div class="output-preview-empty" data-output-preview-empty hidden></div>
+                        <pre hidden></pre>
                         <div class="rendered-output" data-rendered-preview hidden></div>
                     </div>
                 `;
@@ -1985,7 +2107,7 @@
                 });
                 step.addEventListener('click', (event) => {
                     const action = event.target.closest('[data-step-action]')?.dataset.stepAction;
-                    if (!action && event.target.closest('input, select, textarea')) {
+                    if (!action && event.target.closest('input, select, textarea, summary, .list-arg')) {
                         state.selectedNodeId = node.id;
                         return;
                     }
@@ -2078,8 +2200,14 @@
                 return;
             }
             const pre = $('pre', container);
+            const empty = $('[data-output-preview-empty]', container);
             const rendered = $('[data-rendered-preview]', container);
             const actions = $('[data-output-preview-actions]', container);
+            if (empty) {
+                empty.hidden = true;
+                empty.textContent = '';
+                empty.classList.remove('error');
+            }
             if (rendered) {
                 rendered.hidden = true;
                 rendered.innerHTML = '';
@@ -2095,19 +2223,23 @@
                     };
                 }
             }
-            pre.hidden = false;
+            pre.hidden = true;
+            pre.textContent = '';
             const run = state.lastRunResults[node.id];
             if (!run) {
-                if (isOutputNode(node)) {
-                    container.hidden = false;
-                    $('[data-output-preview-title]', container).textContent = 'Output preview';
-                    pre.hidden = true;
-                    pre.textContent = '';
-                    if (actions) {
-                        actions.hidden = false;
+                container.hidden = false;
+                $('[data-output-preview-title]', container).textContent = isOutputNode(node) ? 'Rendered output' : 'Step output';
+                if (empty) {
+                    empty.hidden = false;
+                    if (state.runError) {
+                        empty.classList.add('error');
+                        empty.textContent = state.runError;
+                    } else {
+                        empty.textContent = 'Run the full pipe to inspect what this step sends to the next step.';
                     }
-                } else {
-                    container.hidden = true;
+                }
+                if (actions) {
+                    actions.hidden = false;
                 }
                 return;
             }
@@ -2118,7 +2250,7 @@
                     result.value :
                     undefined;
                 const inputValue = run.input && Object.prototype.hasOwnProperty.call(run.input, 'value') ? run.input.value : undefined;
-                $('[data-output-preview-title]', container).textContent = 'Output preview';
+                $('[data-output-preview-title]', container).textContent = 'Rendered output';
                 if (isDashboardOutputNode(node) && rendered) {
                     pre.hidden = true;
                     rendered.hidden = false;
@@ -2131,10 +2263,12 @@
                     }
                     return;
                 }
+                pre.hidden = false;
                 pre.textContent = `Input value:\n${compactPreview(inputValue)}\n\nRendered value:\n${compactPreview(value)}`;
                 return;
             }
-            $('[data-output-preview-title]', container).textContent = 'Node output';
+            $('[data-output-preview-title]', container).textContent = 'Step output';
+            pre.hidden = false;
             pre.textContent = compactPreview(run.result);
         };
 
@@ -2393,11 +2527,14 @@
                     <button data-action="add-binding">Add Binding</button>
                 </div>
                 <div class="output-preview" data-inspector-output-preview hidden>
-                    <strong data-output-preview-title>Output preview</strong>
-                    <pre></pre>
-                    <div class="output-preview-actions" data-output-preview-actions hidden>
-                        <button type="button" data-run-from-preview>Run pipe</button>
+                    <div class="output-preview-header">
+                        <strong class="output-preview-title" data-output-preview-title>Step output</strong>
+                        <div class="output-preview-actions" data-output-preview-actions hidden>
+                            <button type="button" data-run-from-preview>Run full pipe</button>
+                        </div>
                     </div>
+                    <div class="output-preview-empty" data-output-preview-empty hidden></div>
+                    <pre hidden></pre>
                     <div class="rendered-output" data-rendered-preview hidden></div>
                 </div>
                 <button class="danger" data-action="remove-node">Remove Node</button>
@@ -2519,10 +2656,16 @@
                 const binding = (node.bindings || []).find((candidate) => candidate.target === prop.name);
                 const sourceNodes = compatibleBindingSourceNodesFor(node, prop);
                 const argValue = ensureNodeArgs(node)[prop.name];
-                const row = document.createElement('div');
+                const row = document.createElement('details');
                 row.className = 'list-arg';
-                row.innerHTML = '<label></label>';
-                $('label', row).textContent = `${prop.name}${prop.required ? ' *' : ''}`;
+                row.dataset.listArgDetails = `${node.id}.${prop.name}`;
+                row.open = state.openListArg === row.dataset.listArgDetails;
+                const summary = document.createElement('summary');
+                summary.textContent = `${prop.name}${prop.required ? ' *' : ''}`;
+                row.append(summary);
+                row.addEventListener('toggle', () => {
+                    state.openListArg = row.open ? row.dataset.listArgDetails : '';
+                });
 
                 if (node.ability_id === 'pipes/output-dashboard-list' && prop.name === 'columns') {
                     const hasConfiguredColumns = Array.isArray(ensureNodeArgs(node).columns);
@@ -2570,60 +2713,85 @@
                     continue;
                 }
 
-                const bindSelect = document.createElement('select');
-                const manualOption = document.createElement('option');
-                manualOption.value = '';
-                manualOption.textContent = 'Manual value';
-                bindSelect.append(manualOption);
-                const askOption = document.createElement('option');
-                askOption.value = '__ask_user';
-                askOption.textContent = 'Ask user';
-                bindSelect.append(askOption);
-                for (const source of sourceNodes) {
-                    const option = document.createElement('option');
-                    option.value = source.id;
-                    option.textContent = source.label || source.ability_id;
-                    bindSelect.append(option);
-                }
-                bindSelect.value = binding?.source || (isUserQueryArg(argValue) ? '__ask_user' : '');
-                bindSelect.addEventListener('change', (event) => {
+                const mode = binding ? 'binding' : (isUserQueryArg(argValue) ? 'ask' : 'manual');
+                const modeGroup = document.createElement('div');
+                modeGroup.className = 'input-mode';
+                const modeName = `input-mode-${node.id}-${prop.name}`;
+                const setManualMode = () => {
                     node.bindings = node.bindings || [];
-                    const existing = node.bindings.find((candidate) => candidate.target === prop.name);
-                    if (!event.target.value) {
-                        node.bindings = node.bindings.filter((candidate) => candidate.target !== prop.name);
-                        if (isUserQueryArg(ensureNodeArgs(node)[prop.name])) {
-                            delete node.args[prop.name];
-                        }
-                        syncEdgesFromBindings();
-                        markDirty();
-                        render();
-                        return;
+                    node.bindings = node.bindings.filter((candidate) => candidate.target !== prop.name);
+                    if (isUserQueryArg(ensureNodeArgs(node)[prop.name])) {
+                        delete node.args[prop.name];
                     }
-                    if (event.target.value === '__ask_user') {
-                        node.bindings = node.bindings.filter((candidate) => candidate.target !== prop.name);
-                        ensureNodeArgs(node)[prop.name] = {
-                            __pipes_user_query: true,
-                            question: `What should ${prop.name} be?`
-                        };
-                        syncEdgesFromBindings();
-                        markDirty();
-                        render();
-                        return;
-                    }
-
-                    const sourcePorts = compatibleOutputPortsFor(nodeById(event.target.value) || {}, prop);
-                    const nextBinding = existing || { target: prop.name, source: event.target.value, path: sourcePorts[0]?.path || '' };
-                    nextBinding.source = event.target.value;
-                    nextBinding.path = sourcePorts.some((port) => port.path === nextBinding.path) ? nextBinding.path : (sourcePorts[0]?.path || '');
-                    if (!existing) {
-                        node.bindings.push(nextBinding);
-                    }
-                    delete ensureNodeArgs(node)[prop.name];
                     syncEdgesFromBindings();
                     markDirty();
                     render();
-                });
-                row.append(bindSelect);
+                };
+                const setAskMode = () => {
+                    node.bindings = node.bindings || [];
+                    node.bindings = node.bindings.filter((candidate) => candidate.target !== prop.name);
+                    ensureNodeArgs(node)[prop.name] = {
+                        __pipes_user_query: true,
+                        question: `What should ${prop.name} be?`
+                    };
+                    syncEdgesFromBindings();
+                    markDirty();
+                    render();
+                };
+                for (const [value, label, handler] of [
+                    ['manual', 'Predefined', setManualMode],
+                    ['ask', 'Ask user', setAskMode]
+                ]) {
+                    const optionLabel = document.createElement('label');
+                    const radio = document.createElement('input');
+                    radio.type = 'radio';
+                    radio.name = modeName;
+                    radio.value = value;
+                    radio.checked = mode === value;
+                    radio.addEventListener('change', () => {
+                        if (radio.checked) {
+                            handler();
+                        }
+                    });
+                    optionLabel.append(radio, document.createTextNode(label));
+                    modeGroup.append(optionLabel);
+                }
+                row.append(modeGroup);
+
+                if (sourceNodes.length) {
+                    const bindSelect = document.createElement('select');
+                    const chooseSource = document.createElement('option');
+                    chooseSource.value = '';
+                    chooseSource.textContent = 'Bind from previous output';
+                    bindSelect.append(chooseSource);
+                    for (const source of sourceNodes) {
+                        const option = document.createElement('option');
+                        option.value = source.id;
+                        option.textContent = source.label || source.ability_id;
+                        bindSelect.append(option);
+                    }
+                    bindSelect.value = binding?.source || '';
+                    bindSelect.addEventListener('change', (event) => {
+                        if (!event.target.value) {
+                            setManualMode();
+                            return;
+                        }
+                        node.bindings = node.bindings || [];
+                        const existing = node.bindings.find((candidate) => candidate.target === prop.name);
+                        const sourcePorts = compatibleOutputPortsFor(nodeById(event.target.value) || {}, prop);
+                        const nextBinding = existing || { target: prop.name, source: event.target.value, path: sourcePorts[0]?.path || '' };
+                        nextBinding.source = event.target.value;
+                        nextBinding.path = sourcePorts.some((port) => port.path === nextBinding.path) ? nextBinding.path : (sourcePorts[0]?.path || '');
+                        if (!existing) {
+                            node.bindings.push(nextBinding);
+                        }
+                        delete ensureNodeArgs(node)[prop.name];
+                        syncEdgesFromBindings();
+                        markDirty();
+                        render();
+                    });
+                    row.append(bindSelect);
+                }
 
                 if (isUserQueryArg(ensureNodeArgs(node)[prop.name])) {
                     const question = document.createElement('input');
@@ -2846,6 +3014,7 @@
             renderGraph();
             renderListBuilder();
             renderInspector();
+            renderRunOutput();
         };
 
         $('[data-title]').addEventListener('input', (event) => {

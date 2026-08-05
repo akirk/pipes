@@ -604,7 +604,7 @@ class App extends BaseApp {
 
         $this->register_pipe_ability( 'pipes/output-debug', [
             'label'               => __( 'Debug Output', 'pipes' ),
-            'description'         => __( 'Displays a bound pipe value in the builder run preview without publishing it.', 'pipes' ),
+            'description'         => __( 'Displays bound pipe values in the builder run preview without publishing them.', 'pipes' ),
             'input_schema'        => [
                 'type'                 => 'object',
                 'required'             => [ 'value' ],
@@ -614,7 +614,10 @@ class App extends BaseApp {
                         'description' => __( 'Value to inspect. Bind this to an upstream output field.', 'pipes' ),
                     ],
                 ],
-                'additionalProperties' => false,
+                'additionalProperties' => [
+                    'type'        => [ 'object', 'array', 'string', 'number', 'integer', 'boolean', 'null' ],
+                    'description' => __( 'Additional values to inspect. Use names such as value_2 or filtered_items.', 'pipes' ),
+                ],
             ],
             'output_schema'       => [
                 'type'       => 'object',
@@ -622,10 +625,16 @@ class App extends BaseApp {
                     'value' => [
                         'type' => [ 'object', 'array', 'string', 'number', 'integer', 'boolean', 'null' ],
                     ],
+                    'values' => [
+                        'type'                 => 'object',
+                        'additionalProperties' => [
+                            'type' => [ 'object', 'array', 'string', 'number', 'integer', 'boolean', 'null' ],
+                        ],
+                    ],
                 ],
             ],
-            'execute_callback'    => [ $this, 'ability_output_sink' ],
-            'meta'                => $this->ability_meta( true, false, true, __( 'Use this while building a pipe to inspect any upstream value.', 'pipes' ) ),
+            'execute_callback'    => [ $this, 'ability_debug_output_sink' ],
+            'meta'                => $this->ability_meta( true, false, true, __( 'Use this while building a pipe to inspect one or more upstream values.', 'pipes' ) ),
         ] );
 
         foreach ( $this->output_ability_labels() as $ability_id => $label ) {
@@ -1206,6 +1215,15 @@ class App extends BaseApp {
 
         return [
             'value' => $input['value'] ?? null,
+        ];
+    }
+
+    public function ability_debug_output_sink( $input ): array {
+        $input = is_array( $input ) ? $input : [];
+
+        return [
+            'value'  => $input['value'] ?? null,
+            'values' => $input,
         ];
     }
 

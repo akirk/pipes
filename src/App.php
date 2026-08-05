@@ -524,6 +524,32 @@ class App extends BaseApp {
             'meta'                => $this->ability_meta( true, false, true, __( 'Use this to make a digest, prompt, note, or compact text summary from list output.', 'pipes' ) ),
         ] );
 
+        $this->register_pipe_ability( 'pipes/output-debug', [
+            'label'               => __( 'Debug Output', 'pipes' ),
+            'description'         => __( 'Displays a bound pipe value in the builder run preview without publishing it.', 'pipes' ),
+            'input_schema'        => [
+                'type'                 => 'object',
+                'required'             => [ 'value' ],
+                'properties'           => [
+                    'value' => [
+                        'type'        => [ 'object', 'array', 'string', 'number', 'integer', 'boolean', 'null' ],
+                        'description' => __( 'Value to inspect. Bind this to an upstream output field.', 'pipes' ),
+                    ],
+                ],
+                'additionalProperties' => false,
+            ],
+            'output_schema'       => [
+                'type'       => 'object',
+                'properties' => [
+                    'value' => [
+                        'type' => [ 'object', 'array', 'string', 'number', 'integer', 'boolean', 'null' ],
+                    ],
+                ],
+            ],
+            'execute_callback'    => [ $this, 'ability_output_sink' ],
+            'meta'                => $this->ability_meta( true, false, true, __( 'Use this while building a pipe to inspect any upstream value.', 'pipes' ) ),
+        ] );
+
         foreach ( $this->output_ability_labels() as $ability_id => $label ) {
             $input_schema = [
                 'type'                 => 'object',

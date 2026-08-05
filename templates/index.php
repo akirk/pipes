@@ -1410,6 +1410,43 @@
             }));
         };
 
+        const formatTextPlaceholderNames = (node) => {
+            if (node?.ability_id !== 'pipes/format-text') {
+                return [];
+            }
+            const template = String(ensureNodeArgs(node).template || '');
+            const names = new Set();
+            const pattern = /\{\{\s*([A-Za-z_][A-Za-z0-9_.-]*)\s*\}\}|\{([A-Za-z_][A-Za-z0-9_.-]*)\}/g;
+            let match;
+            while ((match = pattern.exec(template)) !== null) {
+                names.add(match[1] || match[2]);
+            }
+            return Array.from(names);
+        };
+
+        const inputPropertiesForNode = (node) => {
+            const ability = abilityById(node?.ability_id);
+            const props = schemaProperties(ability?.input_schema);
+            if (node?.ability_id !== 'pipes/format-text') {
+                return props;
+            }
+            const existingNames = new Set(props.map((prop) => prop.name));
+            for (const name of formatTextPlaceholderNames(node)) {
+                if (existingNames.has(name)) {
+                    continue;
+                }
+                props.push({
+                    name,
+                    type: 'any',
+                    default: undefined,
+                    description: `Value for {${name}} in the template.`,
+                    required: false
+                });
+                existingNames.add(name);
+            }
+            return props;
+        };
+
         const valueType = (value) => {
             if (Array.isArray(value)) {
                 return 'array';
@@ -1439,8 +1476,7 @@
         };
 
         const inputPortsForNode = (node) => {
-            const ability = abilityById(node.ability_id);
-            const props = schemaProperties(ability?.input_schema);
+            const props = inputPropertiesForNode(node);
             const ports = props.length ?
                 props.slice(0, 6).map((prop) => ({
                     name: prop.name,
@@ -2248,7 +2284,7 @@
         };
 
         const inputPropForNode = (node, propName) => (
-            schemaProperties(abilityById(node.ability_id)?.input_schema)
+            inputPropertiesForNode(node)
                 .find((prop) => prop.name === propName)
         );
 
@@ -2656,6 +2692,11 @@
                     description: 'Take the first items'
                 },
                 {
+                    id: 'pipes/format-text',
+                    title: 'Format',
+                    description: 'Fill placeholders'
+                },
+                {
                     id: 'pipes/output-debug',
                     title: 'Debug',
                     description: 'Inspect a value'
@@ -2899,7 +2940,7 @@
                 return;
             }
             const ability = abilityById(node.ability_id);
-            const props = schemaProperties(ability?.input_schema);
+            const props = inputPropertiesForNode(node);
             const prop = props.find((candidate) => candidate.name === popoverState.propName);
             if (!prop) {
                 state.visualInputPopover = null;
@@ -2988,7 +3029,7 @@
                 $('.flow-step-number', step).textContent = String(index + 1);
                 $('[data-step-label]', step).value = node.label || ability?.label || node.ability_id;
                 $('.meta', step).textContent = node.ability_id;
-                const props = schemaProperties(ability?.input_schema);
+                const props = inputPropertiesForNode(node);
                 const badges = $('.badge-row', step);
                 if (ability?.category) {
                     badges.append(badge(ability.category));
@@ -3387,7 +3428,7 @@
                 return;
             }
             const ability = abilityById(node.ability_id);
-            const props = schemaProperties(ability?.input_schema);
+            const props = inputPropertiesForNode(node);
             ensureActiveBindingTarget(node, props);
             inspector.innerHTML = `
                 <div class="inspector-header">
@@ -3809,7 +3850,10 @@
                 }
 
                 const value = ensureNodeArgs(node)[prop.name];
-                const control = document.createElement(prop.type.includes('array') || prop.type.includes('object') ? 'textarea' : 'input');
+                const useTextarea = prop.type.includes('array') ||
+                    prop.type.includes('object') ||
+                    (node.ability_id === 'pipes/format-text' && prop.name === 'template');
+                const control = document.createElement(useTextarea ? 'textarea' : 'input');
                 control.dataset.nodeArgNode = node.id;
                 control.dataset.nodeArg = prop.name;
                 control.dataset.nodeArgType = prop.type;
@@ -3840,6 +3884,12 @@
                         reportError(`Invalid ${prop.name} value`);
                     }
                 });
+                if (node.ability_id === 'pipes/format-text' && prop.name === 'template') {
+                    control.placeholder = 'Hello {name}, your next step is {action}.';
+                    control.addEventListener('change', () => {
+                        render();
+                    });
+                }
                 row.append(control);
                 if (prop.description) {
                     const description = document.createElement('div');

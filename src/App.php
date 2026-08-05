@@ -573,6 +573,35 @@ class App extends BaseApp {
             'meta'                => $this->ability_meta( true, false, true, __( 'Use this to make a digest, prompt, note, or compact text summary from list output.', 'pipes' ) ),
         ] );
 
+        $this->register_pipe_ability( 'pipes/format-text', [
+            'label'               => __( 'Format Text', 'pipes' ),
+            'description'         => __( 'Builds a text value from a template with named placeholders.', 'pipes' ),
+            'input_schema'        => [
+                'type'                 => 'object',
+                'required'             => [ 'template' ],
+                'properties'           => [
+                    'template' => [
+                        'type'        => 'string',
+                        'description' => __( 'Text template with placeholders such as {title} or {{ summary }}. Each placeholder becomes a bindable input.', 'pipes' ),
+                    ],
+                ],
+                'additionalProperties' => true,
+            ],
+            'output_schema'       => [
+                'type'       => 'object',
+                'properties' => [
+                    'text'         => [ 'type' => 'string' ],
+                    'value'        => [ 'type' => 'string' ],
+                    'placeholders' => [
+                        'type'  => 'array',
+                        'items' => [ 'type' => 'string' ],
+                    ],
+                ],
+            ],
+            'execute_callback'    => [ $this, 'ability_format_text' ],
+            'meta'                => $this->ability_meta( true, false, true, __( 'Use this when the user wants to compose a sentence, prompt, message, or label from values produced by earlier pipe steps.', 'pipes' ) ),
+        ] );
+
         $this->register_pipe_ability( 'pipes/output-debug', [
             'label'               => __( 'Debug Output', 'pipes' ),
             'description'         => __( 'Displays a bound pipe value in the builder run preview without publishing it.', 'pipes' ),
@@ -1142,6 +1171,33 @@ class App extends BaseApp {
         return [
             'text'  => implode( $separator, $parts ),
             'total' => count( $parts ),
+        ];
+    }
+
+    public function ability_format_text( $input ): array {
+        $input        = is_array( $input ) ? $input : [];
+        $template     = (string) ( $input['template'] ?? '' );
+        $placeholders = $this->extract_format_text_placeholders( $template );
+
+        $text = preg_replace_callback(
+            '/\{\{\s*([A-Za-z_][A-Za-z0-9_.-]*)\s*\}\}|\{([A-Za-z_][A-Za-z0-9_.-]*)\}/',
+            function( array $matches ) use ( $input ): string {
+                $name = '' !== ( $matches[1] ?? '' ) ? $matches[1] : ( $matches[2] ?? '' );
+                if ( '' === $name || ! array_key_exists( $name, $input ) ) {
+                    return $matches[0];
+                }
+
+                return $this->stringify_glue_value( $input[ $name ] );
+            },
+            $template
+        );
+
+        $text = null === $text ? $template : $text;
+
+        return [
+            'text'         => $text,
+            'value'        => $text,
+            'placeholders' => $placeholders,
         ];
     }
 
@@ -1794,6 +1850,20 @@ class App extends BaseApp {
         }
 
         return array_slice( $numbers, 0, 24 );
+    }
+
+    private function extract_format_text_placeholders( string $template ): array {
+        preg_match_all( '/\{\{\s*([A-Za-z_][A-Za-z0-9_.-]*)\s*\}\}|\{([A-Za-z_][A-Za-z0-9_.-]*)\}/', $template, $matches, PREG_SET_ORDER );
+
+        $placeholders = [];
+        foreach ( $matches as $match ) {
+            $name = '' !== ( $match[1] ?? '' ) ? $match[1] : ( $match[2] ?? '' );
+            if ( '' !== $name && ! in_array( $name, $placeholders, true ) ) {
+                $placeholders[] = $name;
+            }
+        }
+
+        return $placeholders;
     }
 
     private function is_list_array( array $value ): bool {

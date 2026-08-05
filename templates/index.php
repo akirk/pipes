@@ -235,6 +235,14 @@
             text-align: left;
             padding: 0.65rem;
         }
+        .list-item[draggable="true"],
+        .quick-step[draggable="true"] {
+            cursor: grab;
+        }
+        .list-item.dragging,
+        .quick-step.dragging {
+            opacity: 0.55;
+        }
         .list-item.active {
             border-color: var(--pipes-accent);
             box-shadow: inset 3px 0 0 var(--pipes-accent);
@@ -267,7 +275,7 @@
         .canvas {
             position: relative;
             overflow: auto;
-            overscroll-behavior: contain;
+            overscroll-behavior: auto;
             min-height: 28rem;
             padding: 1.25rem;
             background-image:
@@ -275,6 +283,30 @@
                 linear-gradient(90deg, var(--pipes-border) 1px, transparent 1px);
             background-size: 36px 36px;
             background-color: color-mix(in srgb, var(--pipes-bg) 88%, var(--pipes-surface));
+        }
+        .canvas.drag-target {
+            outline: 2px solid var(--pipes-accent);
+            outline-offset: -2px;
+        }
+        .canvas-visibility {
+            align-items: center;
+            background: color-mix(in srgb, var(--pipes-text) 88%, transparent);
+            border-color: transparent;
+            box-shadow: 0 8px 20px color-mix(in srgb, #000 18%, transparent);
+            color: var(--pipes-surface);
+            display: inline-flex;
+            gap: 0.35rem;
+            left: 100%;
+            margin-bottom: -2.35rem;
+            padding: 0.42rem 0.6rem;
+            position: sticky;
+            top: 0.75rem;
+            transform: translateX(calc(-100% - 0.75rem));
+            width: max-content;
+            z-index: 12;
+        }
+        .canvas-visibility[hidden] {
+            display: none;
         }
         .list-builder {
             display: none;
@@ -1000,6 +1032,7 @@
             <section class="list-builder" data-list-builder></section>
 
             <section class="canvas">
+                <button type="button" class="canvas-visibility" data-out-of-view-indicator hidden></button>
                 <div class="graph" data-graph>
                     <svg class="edges" data-edges></svg>
                     <div class="empty" data-empty>Add abilities from the ability tray to build a flow.</div>
@@ -1837,6 +1870,160 @@
             };
         };
 
+        const nodeSize = () => (
+            window.matchMedia('(max-width: 760px)').matches ?
+                { width: 224, height: 180 } :
+                { width: 288, height: 210 }
+        );
+
+        const canvasViewportInGraph = () => {
+            const canvas = $('.canvas');
+            const graph = $('[data-graph]');
+            const canvasRect = canvas.getBoundingClientRect();
+            const graphRect = graph.getBoundingClientRect();
+            return {
+                left: canvasRect.left - graphRect.left,
+                top: canvasRect.top - graphRect.top,
+                right: canvasRect.right - graphRect.left,
+                bottom: canvasRect.bottom - graphRect.top
+            };
+        };
+
+        const clampNodePositionToViewport = (position) => {
+            const viewport = canvasViewportInGraph();
+            const size = nodeSize();
+            const gutter = 16;
+            const minX = Math.max(gutter, viewport.left + gutter);
+            const minY = Math.max(gutter, viewport.top + gutter);
+            const maxX = Math.max(minX, viewport.right - size.width - gutter);
+            const maxY = Math.max(minY, viewport.bottom - size.height - gutter);
+            return {
+                x: Math.round(Math.min(Math.max(position.x, minX), maxX)),
+                y: Math.round(Math.min(Math.max(position.y, minY), maxY))
+            };
+        };
+
+        const defaultNodePosition = (index) => {
+            const mobile = window.matchMedia('(max-width: 760px)').matches;
+            const position = mobile ?
+                { x: 36, y: 42 + index * 245 } :
+                { x: 28 + index * 320, y: 42 + (index % 3) * 48 };
+            return clampNodePositionToViewport(position);
+        };
+
+        const droppedNodePosition = (event) => {
+            const point = graphPointerPoint(event);
+            const size = nodeSize();
+            return clampNodePositionToViewport({
+                x: point.x - size.width / 2,
+                y: point.y - 28
+            });
+        };
+
+        const attachAbilityDrag = (element, ability) => {
+            element.addEventListener('dragstart', (event) => {
+                event.dataTransfer.effectAllowed = 'copy';
+                event.dataTransfer.setData('text/pipes-ability-id', ability.id);
+                event.dataTransfer.setData('text/plain', ability.id);
+                element.classList.add('dragging');
+            });
+            element.addEventListener('dragend', () => {
+                element.classList.remove('dragging');
+                $('.canvas')?.classList.remove('drag-target');
+            });
+        };
+
+        const abilityIdFromDrag = (event) => (
+            event.dataTransfer.getData('text/pipes-ability-id') ||
+            event.dataTransfer.getData('text/plain')
+        );
+
+        const dragHasAbility = (event) => (
+            Array.from(event.dataTransfer?.types || []).includes('text/pipes-ability-id')
+        );
+
+        const updateOutOfViewIndicator = () => {
+            const indicator = $('[data-out-of-view-indicator]');
+            const canvas = $('.canvas');
+            if (!indicator || !canvas || state.builderMode === 'list') {
+                if (indicator) {
+                    indicator.hidden = true;
+                }
+                return;
+            }
+            const canvasRect = canvas.getBoundingClientRect();
+            const hidden = [];
+            const directions = new Set();
+            $$('.node', $('[data-graph]')).forEach((nodeElement) => {
+                const rect = nodeElement.getBoundingClientRect();
+                const offLeft = rect.left < canvasRect.left;
+                const offRight = rect.right > canvasRect.right;
+                const offTop = rect.top < canvasRect.top;
+                const offBottom = rect.bottom > canvasRect.bottom;
+                if (!(offLeft || offRight || offTop || offBottom)) {
+                    return;
+                }
+                hidden.push(nodeElement);
+                if (offLeft) {
+                    directions.add('left');
+                }
+                if (offRight) {
+                    directions.add('right');
+                }
+                if (offTop) {
+                    directions.add('above');
+                }
+                if (offBottom) {
+                    directions.add('below');
+                }
+            });
+            indicator.hidden = !hidden.length;
+            if (!hidden.length) {
+                indicator.removeAttribute('data-target-node-id');
+                return;
+            }
+            const label = hidden.length === 1 ? '1 item out of view' : `${hidden.length} items out of view`;
+            const directionText = Array.from(directions).join(', ');
+            indicator.textContent = directionText ? `${label}: ${directionText}` : label;
+            indicator.dataset.targetNodeId = hidden[0].dataset.nodeId || '';
+        };
+
+        const scrollToOutOfViewNode = () => {
+            const nodeId = $('[data-out-of-view-indicator]')?.dataset.targetNodeId || '';
+            const nodeElement = nodeId ? $(`.node[data-node-id="${selectorEscape(nodeId)}"]`) : null;
+            if (nodeElement) {
+                nodeElement.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+            }
+        };
+
+        const normalizeWheelDelta = (event) => {
+            if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) {
+                return event.deltaY * 16;
+            }
+            if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
+                return event.deltaY * window.innerHeight;
+            }
+            return event.deltaY;
+        };
+
+        const scrollPageFromCanvasWheel = (event) => {
+            if (event.defaultPrevented || event.ctrlKey || state.builderMode === 'list') {
+                return;
+            }
+            if (event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) {
+                return;
+            }
+            const scroller = document.scrollingElement || document.documentElement;
+            const deltaY = normalizeWheelDelta(event);
+            const maxScroll = scroller.scrollHeight - scroller.clientHeight;
+            const nextScroll = Math.min(Math.max(scroller.scrollTop + deltaY, 0), maxScroll);
+            if (nextScroll === scroller.scrollTop) {
+                return;
+            }
+            event.preventDefault();
+            scroller.scrollTop = nextScroll;
+        };
+
         const startConnectionDraft = (sourceId, path, event, options = {}) => {
             state.connectionDraft = {
                 sourceId,
@@ -2110,17 +2297,16 @@
             element.addEventListener('pointercancel', finish);
         };
 
-        const addNode = (ability, insertIndex = state.graph.nodes.length) => {
+        const addNode = (ability, insertIndex = state.graph.nodes.length, options = {}) => {
             const index = Math.max(0, Math.min(insertIndex, state.graph.nodes.length));
             const id = `node-${Date.now().toString(36)}-${index}`;
-            const mobile = window.matchMedia('(max-width: 760px)').matches;
             const node = {
                 id,
                 ability_id: ability.id,
                 label: ability.label,
                 args: defaultArgsForAbility(ability),
                 bindings: [],
-                position: mobile ? { x: 36, y: 42 + index * 245 } : { x: 28 + index * 320, y: 42 + (index % 3) * 48 }
+                position: options.position ? clampNodePositionToViewport(options.position) : defaultNodePosition(index)
             };
             state.graph.nodes.splice(index, 0, node);
             syncEdgesFromBindings();
@@ -2341,6 +2527,7 @@
             for (const ability of abilities) {
                 const button = document.createElement('button');
                 button.className = 'list-item';
+                button.draggable = true;
                 button.innerHTML = `
                     <strong></strong>
                     <span class="meta"></span>
@@ -2358,6 +2545,7 @@
                 if (ability.destructive) {
                     badges.append(badge('destructive', 'warn'));
                 }
+                attachAbilityDrag(button, ability);
                 button.addEventListener('click', () => addNode(ability));
                 list.append(button);
             }
@@ -2402,9 +2590,11 @@
                 const button = document.createElement('button');
                 button.type = 'button';
                 button.className = 'quick-step';
+                button.draggable = true;
                 button.innerHTML = '<strong></strong><span class="meta"></span>';
                 $('strong', button).textContent = step.title;
                 $('.meta', button).textContent = step.description;
+                attachAbilityDrag(button, step.ability);
                 button.addEventListener('click', () => addNode(step.ability));
                 grid.append(button);
             }
@@ -2453,6 +2643,7 @@
                 const ability = abilityById(node.ability_id);
                 const element = document.createElement('article');
                 element.className = `node ${node.id === state.selectedNodeId ? 'selected' : ''}`;
+                element.dataset.nodeId = node.id;
                 element.style.left = `${node.position.x}px`;
                 element.style.top = `${node.position.y}px`;
                 element.innerHTML = `
@@ -2594,6 +2785,7 @@
 
             renderVisualInputPopover(graph);
             renderEdges();
+            window.requestAnimationFrame(updateOutOfViewIndicator);
         };
 
         const renderVisualInputPopover = (graph) => {
@@ -2942,6 +3134,7 @@
             if (state.connectionDraft) {
                 renderConnectionDraft(svg);
             }
+            window.requestAnimationFrame(updateOutOfViewIndicator);
         };
 
         const renderConnectionDraft = (svg) => {
@@ -3603,6 +3796,31 @@
         $$('[data-builder-mode]').forEach((button) => {
             button.addEventListener('click', () => setBuilderMode(button.dataset.builderMode));
         });
+        $('.canvas').addEventListener('dragover', (event) => {
+            if (!dragHasAbility(event)) {
+                return;
+            }
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'copy';
+            $('.canvas').classList.add('drag-target');
+        });
+        $('.canvas').addEventListener('dragleave', (event) => {
+            if (!event.currentTarget.contains(event.relatedTarget)) {
+                event.currentTarget.classList.remove('drag-target');
+            }
+        });
+        $('.canvas').addEventListener('drop', (event) => {
+            const ability = abilityById(abilityIdFromDrag(event));
+            $('.canvas').classList.remove('drag-target');
+            if (!ability) {
+                return;
+            }
+            event.preventDefault();
+            addNode(ability, state.graph.nodes.length, { position: droppedNodePosition(event) });
+        });
+        $('.canvas').addEventListener('wheel', scrollPageFromCanvasWheel, { passive: false });
+        $('.canvas').addEventListener('scroll', updateOutOfViewIndicator, { passive: true });
+        $('[data-out-of-view-indicator]').addEventListener('click', scrollToOutOfViewNode);
         $('[data-graph]').addEventListener('click', (event) => {
             if (!event.target.closest('.node, .input-popover')) {
                 cancelConnectionDraft();
@@ -3616,6 +3834,7 @@
                 cancelConnectionDraft();
             }
         });
+        window.addEventListener('resize', updateOutOfViewIndicator);
 
         Promise.all([loadPipes(), loadAbilities(), loadExamples()])
             .then(() => {

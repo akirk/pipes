@@ -443,6 +443,55 @@ class App extends BaseApp {
             'meta'                => $this->ability_meta( true, false, true, __( 'Use this to clean up labels, titles, URLs, or other text fields before output.', 'pipes' ) ),
         ] );
 
+        $this->register_pipe_ability( 'pipes/format-date-field', [
+            'label'               => __( 'Format Date Field', 'pipes' ),
+            'description'         => __( 'Formats a date value, or one date field inside every item in a list.', 'pipes' ),
+            'input_schema'        => [
+                'type'                 => 'object',
+                'properties'           => [
+                    'value'        => [
+                        'type'        => [ 'string', 'number', 'integer' ],
+                        'description' => __( 'Single date value to format, such as 2026-01-12.', 'pipes' ),
+                    ],
+                    'items'        => [
+                        'type'        => 'array',
+                        'description' => __( 'Items to change.', 'pipes' ),
+                        'items'       => [ 'type' => [ 'object', 'array', 'string', 'number', 'integer', 'boolean', 'null' ] ],
+                    ],
+                    'path'         => [
+                        'type'        => 'string',
+                        'description' => __( 'Dot path inside each item, such as date, start_date, or trip.departure_date.', 'pipes' ),
+                    ],
+                    'date_format'  => [
+                        'type'        => 'string',
+                        'description' => __( 'PHP date format for output. Defaults to the site date format.', 'pipes' ),
+                        'default'     => 'F j, Y',
+                    ],
+                    'input_format' => [
+                        'type'        => 'string',
+                        'description' => __( 'Optional PHP date format for parsing source dates, for example Y-m-d.', 'pipes' ),
+                    ],
+                ],
+                'additionalProperties' => false,
+            ],
+            'output_schema'       => [
+                'type'       => 'object',
+                'properties' => [
+                    'items'   => [
+                        'type'  => 'array',
+                        'items' => [ 'type' => [ 'object', 'array', 'string', 'number', 'integer', 'boolean', 'null' ] ],
+                    ],
+                    'value'   => [
+                        'type' => [ 'string', 'null' ],
+                    ],
+                    'total'   => [ 'type' => 'integer' ],
+                    'changed' => [ 'type' => 'integer' ],
+                ],
+            ],
+            'execute_callback'    => [ $this, 'ability_format_date_field' ],
+            'meta'                => $this->ability_meta( true, false, true, __( 'Use this to turn machine-readable date fields like 2026-01-12 into human-readable dates before output.', 'pipes' ) ),
+        ] );
+
         $this->register_pipe_ability( 'pipes/pluck-field', [
             'label'               => __( 'Pluck Field', 'pipes' ),
             'description'         => __( 'Reads one dot-path from each item in a list and returns the collected values.', 'pipes' ),
@@ -979,6 +1028,67 @@ class App extends BaseApp {
         unset( $item );
 
         return [
+            'items'   => array_values( $items ),
+            'total'   => count( $items ),
+            'changed' => $changed,
+        ];
+    }
+
+    public function ability_format_date_field( $input ): array {
+        $input        = is_array( $input ) ? $input : [];
+        $path         = (string) ( $input['path'] ?? '' );
+        $date_format  = (string) ( $input['date_format'] ?? '' );
+        $input_format = (string) ( $input['input_format'] ?? '' );
+        $changed      = 0;
+
+        if ( '' === $date_format ) {
+            $date_format = (string) get_option( 'date_format' );
+        }
+
+        if ( array_key_exists( 'value', $input ) ) {
+            $formatted = $this->format_date_value( $input['value'], $date_format, $input_format );
+
+            return [
+                'value'   => $formatted,
+                'items'   => [],
+                'total'   => null === $formatted ? 0 : 1,
+                'changed' => null === $formatted || $formatted === $this->stringify_glue_value( $input['value'] ) ? 0 : 1,
+            ];
+        }
+
+        $items = isset( $input['items'] ) && is_array( $input['items'] ) ? array_values( $input['items'] ) : [];
+        if ( '' === $path ) {
+            return [
+                'value'   => null,
+                'items'   => $items,
+                'total'   => count( $items ),
+                'changed' => 0,
+            ];
+        }
+
+        foreach ( $items as &$item ) {
+            $value = $this->get_path_value( $item, $path );
+            if ( null === $value || is_array( $value ) || is_object( $value ) ) {
+                continue;
+            }
+
+            $formatted = $this->format_date_value( $value, $date_format, $input_format );
+            if ( null === $formatted ) {
+                continue;
+            }
+
+            if ( $formatted === $this->stringify_glue_value( $value ) ) {
+                continue;
+            }
+
+            if ( $this->set_path_value( $item, $path, $formatted ) ) {
+                $changed++;
+            }
+        }
+        unset( $item );
+
+        return [
+            'value'   => null,
             'items'   => array_values( $items ),
             'total'   => count( $items ),
             'changed' => $changed,
@@ -1899,6 +2009,10 @@ class App extends BaseApp {
                 $input[ $target ] = $this->get_path_value( $results[ $source_id ]['result'], (string) ( $binding['path'] ?? '' ) );
             }
 
+            if ( $this->should_skip_missing_items_node( $details, $input ) ) {
+                continue;
+            }
+
             $result = $ability->execute( $input );
             if ( is_wp_error( $result ) ) {
                 return new \WP_Error(
@@ -1924,6 +2038,25 @@ class App extends BaseApp {
             'success' => true,
             'results' => $results,
         ];
+    }
+
+    private function should_skip_missing_items_node( array $details, array $input ): bool {
+        $schema = is_array( $details['input_schema'] ?? null ) ? $details['input_schema'] : [];
+        if ( ! in_array( 'items', (array) ( $schema['required'] ?? [] ), true ) ) {
+            return false;
+        }
+
+        $items_schema = $schema['properties']['items'] ?? null;
+        if ( ! is_array( $items_schema ) ) {
+            return false;
+        }
+
+        $types = (array) ( $items_schema['type'] ?? [] );
+        if ( ! in_array( 'array', $types, true ) ) {
+            return false;
+        }
+
+        return ! isset( $input['items'] ) || ! is_array( $input['items'] );
     }
 
     private function is_user_query_arg( $value ): bool {
@@ -2079,6 +2212,37 @@ class App extends BaseApp {
 
         $json = wp_json_encode( $value );
         return is_string( $json ) ? $json : '';
+    }
+
+    private function format_date_value( $value, string $date_format, string $input_format ): ?string {
+        if ( null === $value || is_array( $value ) || is_object( $value ) ) {
+            return null;
+        }
+
+        $timestamp = $this->parse_field_date_timestamp( $this->stringify_glue_value( $value ), $input_format );
+        if ( null === $timestamp ) {
+            return null;
+        }
+
+        return wp_date( $date_format, $timestamp );
+    }
+
+    private function parse_field_date_timestamp( string $text, string $input_format ): ?int {
+        $text = trim( $text );
+        if ( '' === $text ) {
+            return null;
+        }
+
+        if ( '' !== $input_format ) {
+            $date = \DateTimeImmutable::createFromFormat( '!' . $input_format, $text, wp_timezone() );
+            if ( $date instanceof \DateTimeImmutable ) {
+                return $date->getTimestamp();
+            }
+            return null;
+        }
+
+        $timestamp = strtotime( $text );
+        return false === $timestamp ? null : $timestamp;
     }
 
     private function build_regex_pattern( string $pattern, bool $case_sensitive ): string {

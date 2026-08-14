@@ -658,18 +658,30 @@ class App extends BaseApp {
                 ];
             }
 
+            $output_schema = [
+                'type'       => 'object',
+                'properties' => [
+                    'value' => [
+                        'type' => [ 'object', 'array', 'string', 'number', 'integer', 'boolean', 'null' ],
+                    ],
+                ],
+            ];
+            if ( in_array( $ability_id, [ 'pipes/output-dashboard-text', 'pipes/output-dashboard-list' ], true ) ) {
+                $output_schema['properties']['raw_value'] = [
+                    'type'        => [ 'object', 'array', 'string', 'number', 'integer', 'boolean', 'null' ],
+                    'description' => __( 'Original value before dashboard rendering.', 'pipes' ),
+                ];
+                $output_schema['properties']['html'] = [
+                    'type'        => 'string',
+                    'description' => __( 'Rendered dashboard HTML for this output.', 'pipes' ),
+                ];
+            }
+
             $this->register_pipe_ability( $ability_id, [
                 'label'               => $label,
                 'description'         => __( 'Publishes a bound pipe value into a WordPress surface.', 'pipes' ),
                 'input_schema'        => $input_schema,
-                'output_schema'       => [
-                    'type'       => 'object',
-                    'properties' => [
-                        'value' => [
-                            'type' => [ 'object', 'array', 'string', 'number', 'integer', 'boolean', 'null' ],
-                        ],
-                    ],
-                ],
+                'output_schema'       => $output_schema,
                 'execute_callback'    => [ $this, 'ability_output_sink' ],
                 'meta'                => $this->ability_meta( true, false, true, __( 'Use this as the last box in a pipe to make its output visible in WordPress.', 'pipes' ) ),
             ] );
@@ -1621,6 +1633,9 @@ class App extends BaseApp {
         $node_id = (string) ( $target['node_id'] ?? '' );
         if ( '' !== $node_id ) {
             $node_result = $run['results'][ $node_id ]['result'] ?? null;
+            if ( is_array( $node_result ) && array_key_exists( 'raw_value', $node_result ) ) {
+                return $node_result['raw_value'];
+            }
             if ( is_array( $node_result ) && array_key_exists( 'value', $node_result ) ) {
                 return $node_result['value'];
             }
@@ -2113,12 +2128,14 @@ class App extends BaseApp {
                 );
             }
 
+            $result = $this->decorate_output_result( $details['id'], $input, $this->normalize_result( $result ) );
+
             $results[ $node['id'] ] = [
                 'node_id'    => $node['id'],
                 'ability_id' => $details['id'],
                 'label'      => $details['label'],
                 'input'      => $input,
-                'result'     => $this->normalize_result( $result ),
+                'result'     => $result,
             ];
         }
 
@@ -2344,6 +2361,34 @@ class App extends BaseApp {
 
         if ( is_object( $result ) ) {
             return get_object_vars( $result );
+        }
+
+        return $result;
+    }
+
+    private function decorate_output_result( string $ability_id, array $input, $result ) {
+        if ( ! is_array( $result ) ) {
+            $result = [ 'value' => $result ];
+        }
+
+        if ( 'pipes/output-dashboard-text' === $ability_id ) {
+            $raw_value           = $result['value'] ?? null;
+            $result['raw_value'] = $raw_value;
+            $result['html']      = '<p>' . esc_html( $this->stringify_glue_value( $raw_value ) ) . '</p>';
+            $result['value']     = $result['html'];
+            return $result;
+        }
+
+        if ( 'pipes/output-dashboard-list' === $ability_id ) {
+            $raw_value = $result['value'] ?? null;
+            $columns = is_array( $input['columns'] ?? null ) ? array_values( array_filter(
+                array_map( 'strval', $input['columns'] ),
+                static fn( string $column ): bool => '' !== $column
+            ) ) : [];
+
+            $result['raw_value'] = $raw_value;
+            $result['html']      = $this->render_value_html( $raw_value, $columns );
+            $result['value']     = $result['html'];
         }
 
         return $result;

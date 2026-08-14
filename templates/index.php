@@ -349,13 +349,33 @@
             gap: 0.35rem;
             flex-wrap: wrap;
         }
+        .output-badge-wrap {
+            display: inline-flex;
+            position: relative;
+        }
         .badge {
             border: 1px solid var(--pipes-border);
             border-radius: 999px;
+            background: transparent;
             color: var(--pipes-muted);
             font-size: 0.72rem;
             line-height: 1;
             padding: 0.28rem 0.45rem;
+        }
+        button.badge {
+            appearance: none;
+            -webkit-appearance: none;
+            background: transparent;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 0.72rem;
+            line-height: 1;
+            margin: 0;
+        }
+        button.badge:hover,
+        button.badge.active {
+            border-color: var(--pipes-link);
+            color: var(--pipes-link);
         }
         .badge.warn {
             border-color: color-mix(in srgb, var(--pipes-danger) 44%, var(--pipes-border));
@@ -426,6 +446,7 @@
             border-radius: var(--pipes-radius);
             background: var(--pipes-surface);
             padding: 0.85rem;
+            position: relative;
         }
         .flow-step.active {
             border-color: var(--pipes-accent);
@@ -563,6 +584,27 @@
             gap: 0.45rem;
             margin-top: 0.75rem;
             padding-top: 0.75rem;
+        }
+        .output-preview-popover {
+            background: var(--pipes-surface);
+            border: 1px solid var(--pipes-border);
+            border-radius: var(--pipes-radius);
+            box-shadow: 0 16px 38px color-mix(in srgb, #000 16%, transparent);
+            display: grid;
+            gap: 0.45rem;
+            max-height: min(28rem, calc(100vh - 7rem));
+            overflow: auto;
+            padding: 0.75rem;
+            position: absolute;
+            left: 0;
+            top: calc(100% + 0.45rem);
+            width: min(34rem, calc(100vw - 2rem));
+            z-index: 9;
+        }
+        .output-preview-popover .output-preview {
+            border-top: 0;
+            margin-top: 0;
+            padding-top: 0;
         }
         .output-preview-header {
             align-items: center;
@@ -1266,6 +1308,7 @@
             listAddSearch: '',
             openListArg: '',
             visualInputPopover: null,
+            outputPreviewPopover: null,
             connectionDraft: null,
             inspectorOpen: false,
             undoStack: [],
@@ -2076,6 +2119,21 @@
                 return result.value;
             }
             return run.result;
+        };
+
+        const debugDashboardHtml = (node) => {
+            const run = state.lastRunResults[node.id];
+            if (!run?.input || typeof run.input !== 'object') {
+                return undefined;
+            }
+            const binding = (node.bindings || []).find((candidate) => {
+                const source = nodeById(candidate.source);
+                return source && isDashboardOutputNode(source) && [ 'value', 'html' ].includes(candidate.path || '');
+            });
+            if (!binding || typeof run.input[binding.target] !== 'string') {
+                return undefined;
+            }
+            return run.input[binding.target];
         };
 
         const appendTextElement = (parent, tagName, text) => {
@@ -2983,11 +3041,47 @@
             }
         };
 
-        const badge = (text, className = '') => {
-            const span = document.createElement('span');
-            span.className = `badge ${className}`;
-            span.textContent = text;
-            return span;
+        const badge = (text, className = '', options = {}) => {
+            const element = document.createElement(options.button ? 'button' : 'span');
+            if (options.button) {
+                element.type = 'button';
+            }
+            element.className = `badge ${className}`;
+            element.textContent = text;
+            return element;
+        };
+
+        const outputBadge = (node) => {
+            const wrapper = document.createElement('span');
+            wrapper.className = 'output-badge-wrap';
+            const button = badge('has output', state.outputPreviewPopover === node.id ? 'active' : '', { button: true });
+            button.title = 'Show output';
+            button.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                state.selectedNodeId = node.id;
+                state.outputPreviewPopover = state.outputPreviewPopover === node.id ? null : node.id;
+                render();
+            });
+            wrapper.append(button);
+            if (state.outputPreviewPopover === node.id) {
+                const popover = document.createElement('div');
+                popover.className = 'output-preview-popover';
+                popover.innerHTML = `
+                    <div class="output-preview" data-output-preview>
+                        <div class="output-preview-header">
+                            <strong class="output-preview-title" data-output-preview-title>Step output</strong>
+                        </div>
+                        <div class="output-preview-empty" data-output-preview-empty hidden></div>
+                        <pre hidden></pre>
+                        <div class="rendered-output" data-rendered-preview hidden></div>
+                    </div>
+                `;
+                popover.addEventListener('click', (event) => event.stopPropagation());
+                wrapper.append(popover);
+                renderOutputPreview(node, $('[data-output-preview]', popover));
+            }
+            return wrapper;
         };
 
         const renderGraph = () => {
@@ -3033,7 +3127,7 @@
                     badges.append(badge(`${node.bindings.length} bound`));
                 }
                 if (state.lastRunResults[node.id]) {
-                    badges.append(badge('has output'));
+                    badges.append(outputBadge(node));
                 }
                 const debugContainer = $('[data-node-debug-preview]', element);
                 if (isDebugOutputNode(node)) {
@@ -3266,7 +3360,7 @@
                     badges.append(badge(`${node.bindings.length} ${node.bindings.length === 1 ? 'binding' : 'bindings'}`));
                 }
                 if (state.lastRunResults[node.id]) {
-                    badges.append(badge('has output'));
+                    badges.append(outputBadge(node));
                 }
                 renderListArgs(node, props, $('[data-list-args]', step), { scope: 'list' });
                 renderOutputPreview(node, $('[data-output-preview]', step));
@@ -3425,7 +3519,14 @@
             if (isOutputNode(node)) {
                 const result = run.result;
                 if (isDebugOutputNode(node)) {
+                    const html = debugDashboardHtml(node);
                     $('[data-output-preview-title]', container).textContent = 'Debug output';
+                    if (html !== undefined && rendered) {
+                        pre.hidden = true;
+                        rendered.hidden = false;
+                        rendered.innerHTML = html;
+                        return;
+                    }
                     pre.hidden = false;
                     pre.textContent = compactPreview(debugPreviewValues(node));
                     return;
@@ -3438,7 +3539,9 @@
                 if (isDashboardOutputNode(node) && rendered) {
                     pre.hidden = true;
                     rendered.hidden = false;
-                    if (node.ability_id === 'pipes/output-dashboard-text') {
+                    if (result && typeof result.html === 'string') {
+                        rendered.innerHTML = result.html;
+                    } else if (node.ability_id === 'pipes/output-dashboard-text') {
                         rendered.innerHTML = '';
                         appendTextElement(rendered, 'p', stringifyGlueValue(value));
                     } else {
@@ -4315,13 +4418,24 @@
             if (!event.target.closest('.node, .input-popover')) {
                 cancelConnectionDraft();
                 state.visualInputPopover = null;
+                state.outputPreviewPopover = null;
                 renderGraph();
             }
         });
         document.addEventListener('pointermove', updateConnectionDraft);
+        document.addEventListener('click', (event) => {
+            if (!state.outputPreviewPopover || event.target.closest('.output-preview-popover, button.badge')) {
+                return;
+            }
+            state.outputPreviewPopover = null;
+            render();
+        });
         document.addEventListener('keydown', (event) => {
             if (event.key === 'Escape') {
                 cancelConnectionDraft();
+                state.visualInputPopover = null;
+                state.outputPreviewPopover = null;
+                render();
             }
         });
         window.addEventListener('resize', updateOutOfViewIndicator);

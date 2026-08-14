@@ -72,4 +72,47 @@ class AppTest extends TestCase {
             $ability['output_schema']['properties']['values']
         );
     }
+
+    public function test_dashboard_output_abilities_expose_rendered_html_output(): void {
+        $this->app->register_abilities();
+
+        $text = $GLOBALS['pipes_test_registered_abilities']['pipes/output-dashboard-text'] ?? null;
+        $list = $GLOBALS['pipes_test_registered_abilities']['pipes/output-dashboard-list'] ?? null;
+        $menu = $GLOBALS['pipes_test_registered_abilities']['pipes/output-masterbar-menu'] ?? null;
+
+        $this->assertSame( 'string', $text['output_schema']['properties']['html']['type'] );
+        $this->assertSame( 'string', $list['output_schema']['properties']['html']['type'] );
+        $this->assertSame(
+            [ 'object', 'array', 'string', 'number', 'integer', 'boolean', 'null' ],
+            $list['output_schema']['properties']['raw_value']['type']
+        );
+        $this->assertArrayNotHasKey( 'html', $menu['output_schema']['properties'] );
+    }
+
+    public function test_dashboard_list_output_result_includes_rendered_html(): void {
+        $method = ( new ReflectionClass( App::class ) )->getMethod( 'decorate_output_result' );
+        $method->setAccessible( true );
+
+        $result = $method->invoke(
+            $this->app,
+            'pipes/output-dashboard-list',
+            [ 'columns' => [ 'title' ] ],
+            [
+                'value' => [
+                    [ 'title' => 'First item', 'url' => 'https://example.test/first' ],
+                ],
+            ]
+        );
+
+        $this->assertSame(
+            [
+                'value'     => '<table><thead><tr><th>title</th></tr></thead><tbody><tr><td>First item</td></tr></tbody></table>',
+                'raw_value' => [
+                    [ 'title' => 'First item', 'url' => 'https://example.test/first' ],
+                ],
+                'html'  => '<table><thead><tr><th>title</th></tr></thead><tbody><tr><td>First item</td></tr></tbody></table>',
+            ],
+            $result
+        );
+    }
 }

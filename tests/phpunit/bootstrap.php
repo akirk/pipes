@@ -21,6 +21,18 @@ namespace {
         return $text;
     }
 
+    function esc_html__( $text, $domain = 'default' ) {
+        return htmlspecialchars( (string) $text, ENT_QUOTES, 'UTF-8' );
+    }
+
+    function esc_html( $text ) {
+        return htmlspecialchars( (string) $text, ENT_QUOTES, 'UTF-8' );
+    }
+
+    function wp_json_encode( $value, $flags = 0, $depth = 512 ) {
+        return json_encode( $value, $flags, $depth );
+    }
+
     function wp_register_ability( $ability_id, $args ) {
         $GLOBALS['pipes_test_registered_abilities'][ $ability_id ] = $args;
     }

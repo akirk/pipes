@@ -16,6 +16,7 @@ class App extends BaseApp {
             'require_capability' => 'read',
             'app_name'           => 'Pipes',
             'my_apps'            => 'Pipes',
+            'my_apps_icon'       => 'dashicons-randomize',
         ] );
 
         add_action( 'init', [ $this, 'register_post_types' ] );

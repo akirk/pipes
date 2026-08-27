@@ -15,8 +15,11 @@ class App extends BaseApp {
             'require_login'      => true,
             'require_capability' => 'read',
             'app_name'           => 'Pipes',
-            'my_apps'            => 'Pipes',
-            'my_apps_icon'       => 'dashicons-randomize',
+            'launcher'           => 'Pipes',
+            'app_icon'           => 'dashicons-randomize',
+            // Owned content: REST reads are gated with the app's capability and
+            // OpenStation keeps these menus out of its dock.
+            'post_types'         => [ self::POST_TYPE ],
         ] );
 
         add_action( 'init', [ $this, 'register_post_types' ] );

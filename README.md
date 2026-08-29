@@ -2,7 +2,7 @@
 
 A Yahoo Pipes-style WordPress app powered by [WpApp](https://github.com/akirk/wp-app).
 
-[Try Pipes with Travel App in WordPress Playground](https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/akirk/pipes/main/blueprint.json)
+[Try Pipes in WordPress Playground](https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/akirk/pipes/main/blueprint.json) · [Try it with demo data](https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/akirk/pipes/main/demo.json)
 
 [Try it in OpenStation](https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/akirk/pipes/main/blueprint-openstation.json) — the same app opened in desktop mode with the [OpenStation](https://github.com/WordPress/openstation) plugin.
 

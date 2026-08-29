@@ -2664,12 +2664,12 @@ class App extends BaseApp {
                 'id'          => 'travel-plan-review',
                 'title'       => __( 'Travel Plan Review', 'pipes' ),
                 'description' => __( 'List travel plans and fetch the first plan for detailed review.', 'pipes' ),
-                'requires'    => [ 'travel-app/list-trips', 'travel-app/get-trip' ],
+                'requires'    => [ 'traveler/list-trips', 'traveler/get-trip' ],
                 'graph'       => [
                     'nodes' => [
                         [
                             'id'         => 'trips',
-                            'ability_id' => 'travel-app/list-trips',
+                            'ability_id' => 'traveler/list-trips',
                             'label'      => __( 'List travel plans', 'pipes' ),
                             'args'       => [],
                             'bindings'   => [],
@@ -2677,7 +2677,7 @@ class App extends BaseApp {
                         ],
                         [
                             'id'         => 'trip',
-                            'ability_id' => 'travel-app/get-trip',
+                            'ability_id' => 'traveler/get-trip',
                             'label'      => __( 'Open first plan', 'pipes' ),
                             'args'       => [],
                             'bindings'   => [

@@ -2,7 +2,7 @@
 	"$schema": "https://playground.wordpress.net/blueprint-schema.json",
 	"meta": {
 		"title": "Pipes",
-		"description": "A visual WordPress pipe builder with Travel App abilities installed.",
+		"description": "A visual WordPress pipe builder.",
 		"author": "Alex Kirk",
 		"categories": [
 			"Apps",
@@ -12,19 +12,6 @@
 	},
 	"landingPage": "/pipes/",
 	"steps": [
-		{
-			"step": "installPlugin",
-			"pluginData": {
-				"resource": "git:directory",
-				"url": "https://github.com/akirk/travel-app",
-				"ref": "dist/main",
-				"refType": "branch"
-			},
-			"options": {
-				"activate": true,
-				"targetFolderName": "travel-app"
-			}
-		},
 		{
 			"step": "installPlugin",
 			"pluginData": {

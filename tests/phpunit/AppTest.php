@@ -16,19 +16,20 @@ class AppTest extends TestCase {
         $GLOBALS['pipes_test_registered_abilities'] = [];
     }
 
-    public function test_debug_output_sink_returns_primary_value_and_all_values(): void {
+    /** @dataProvider primaryValues */
+    public function test_debug_output_sink_returns_primary_value_and_all_values( $primary ): void {
         $result = $this->app->ability_debug_output_sink( [
-            'value'          => 'primary',
+            'value'          => $primary,
             'value_2'        => [ 'secondary' ],
             'filtered_items' => [
                 [ 'title' => 'Example' ],
             ],
         ] );
 
-        $this->assertSame( 'primary', $result['value'] );
+        $this->assertSame( $primary, $result['value'] );
         $this->assertSame(
             [
-                'value'          => 'primary',
+                'value'          => $primary,
                 'value_2'        => [ 'secondary' ],
                 'filtered_items' => [
                     [ 'title' => 'Example' ],
@@ -36,6 +37,14 @@ class AppTest extends TestCase {
             ],
             $result['values']
         );
+    }
+
+    public static function primaryValues(): array {
+        return [
+            'text' => [ 'primary' ],
+            'numeric zero is a value' => [ 0 ],
+            'boolean false is a value' => [ false ],
+        ];
     }
 
     public function test_debug_output_sink_handles_non_array_input(): void {

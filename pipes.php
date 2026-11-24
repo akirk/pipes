@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Pipes
  * Description: Connect WordPress abilities into workflows with filters, transformations, and dashboard outputs.
- * Version: 1.0.0
+ * Version: 1.0.0+6e9deacda1fa
  * Author: Alex Kirk
  * Text Domain: pipes
  * Tested up to: 7.1

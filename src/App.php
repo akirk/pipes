@@ -1241,7 +1241,7 @@ class App extends BaseApp {
         $input = is_array( $input ) ? $input : [];
 
         return [
-            'value'  => ( $input['value'] ?? null ) ?: null,
+            'value'  => $input['value'] ?? null,
             'values' => $input,
         ];
     }
